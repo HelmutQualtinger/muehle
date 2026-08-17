@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 (() => {
   "use strict";
@@ -15,6 +16,9 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
   const stockBlackEl = document.getElementById("stock-black");
   const newGameBtn = document.getElementById("new-game-btn");
   const muteBtn = document.getElementById("mute-btn");
+  const rulesBtn = document.getElementById("rules-btn");
+  const rulesModal = document.getElementById("rules-modal");
+  const rulesCloseBtn = document.getElementById("rules-close-btn");
   const opponentChips = document.querySelectorAll("[data-opponent]");
   const colorGroup = document.querySelector(".settings__group--color");
   const colorChips = document.querySelectorAll("[data-color]");
@@ -98,6 +102,23 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
   });
   updateMuteUI();
 
+  // ------------------------------------------------------------ rules modal --
+
+  function openRulesModal() {
+    rulesModal.hidden = false;
+  }
+
+  function closeRulesModal() {
+    rulesModal.hidden = true;
+  }
+
+  rulesBtn.addEventListener("click", openRulesModal);
+  rulesCloseBtn.addEventListener("click", closeRulesModal);
+  rulesModal.querySelector(".rules-modal__backdrop").addEventListener("click", closeRulesModal);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !rulesModal.hidden) closeRulesModal();
+  });
+
   // ------------------------------------------------------------ settings --
 
   function syncSettingsUI(data) {
@@ -163,6 +184,7 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
   let millTweens = [];
   let raycaster = new THREE.Raycaster();
   let pointerDownAt = null;
+  let woodColorTex, woodBumpTex, metalRoughTex, stoneNoiseTex;
 
   function edgeKey(a, b) {
     return a < b ? `${a}_${b}` : `${b}_${a}`;
@@ -172,6 +194,91 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
     const c1 = 1.70158;
     const c3 = c1 + 1;
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  // -------------------------------------------------- procedural textures --
+  // Generated on a <canvas> at startup rather than shipped as image assets,
+  // matching the "no bundler, no binary assets" approach used elsewhere
+  // (e.g. the parchment's noise texture) — see CLAUDE.md.
+
+  function makeCanvas(size) {
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    return c;
+  }
+
+  function drawGrainStrokes(ctx, size, strokeFn) {
+    for (let i = 0; i < 260; i++) {
+      const y = Math.random() * size;
+      ctx.strokeStyle = strokeFn();
+      ctx.lineWidth = 0.5 + Math.random() * 1.7;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      let py = y;
+      for (let x = 8; x <= size; x += 16) {
+        py += (Math.random() - 0.5) * 5;
+        ctx.lineTo(x, py);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function makeWoodColorTexture() {
+    const size = 512;
+    const canvas = makeCanvas(size);
+    const ctx = canvas.getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, size, 0);
+    grad.addColorStop(0, "#7a5530");
+    grad.addColorStop(0.5, "#a67c47");
+    grad.addColorStop(1, "#8a6238");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    drawGrainStrokes(ctx, size, () =>
+      Math.random() > 0.45
+        ? `rgba(58, 38, 18, ${0.05 + Math.random() * 0.1})`
+        : `rgba(180, 140, 90, ${0.04 + Math.random() * 0.08})`
+    );
+    for (let i = 0; i < 4; i++) {
+      const cx = Math.random() * size, cy = Math.random() * size, r = 6 + Math.random() * 16;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, "rgba(35, 22, 10, 0.45)");
+      g.addColorStop(1, "rgba(35, 22, 10, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  function makeGrainBumpTexture() {
+    const size = 512;
+    const canvas = makeCanvas(size);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#808080";
+    ctx.fillRect(0, 0, size, size);
+    drawGrainStrokes(ctx, size, () =>
+      Math.random() > 0.5 ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.08)"
+    );
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }
+
+  function makeSpeckleTexture(size) {
+    const canvas = makeCanvas(size);
+    const ctx = canvas.getContext("2d");
+    const img = ctx.createImageData(size, size);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = 128 + (Math.random() - 0.5) * 70;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
   }
 
   function initThree() {
@@ -189,7 +296,22 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     boardEl.appendChild(renderer.domElement);
+
+    // Procedural IBL so the brass/stone materials get real specular
+    // reflections instead of looking flat-shaded — no HDR asset needed.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+
+    woodColorTex = makeWoodColorTexture();
+    woodBumpTex = makeGrainBumpTexture();
+    metalRoughTex = makeSpeckleTexture(256);
+    stoneNoiseTex = makeSpeckleTexture(256);
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
+    [woodColorTex, woodBumpTex, metalRoughTex, stoneNoiseTex].forEach((t) => { t.anisotropy = maxAniso; });
 
     cssRenderer = new CSS3DRenderer();
     cssRenderer.domElement.classList.add("css3d-layer");
@@ -222,7 +344,15 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
     scene.add(fill);
 
     const boardGeo = new THREE.BoxGeometry(8.4, 0.5, 8.4);
-    const boardMat = new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: 0.7, metalness: 0.05 });
+    const boardMat = new THREE.MeshStandardMaterial({
+      map: woodColorTex,
+      bumpMap: woodBumpTex,
+      bumpScale: 0.035,
+      roughness: 0.85,
+      roughnessMap: metalRoughTex,
+      metalness: 0.04,
+      envMapIntensity: 0.6,
+    });
     boardMesh = new THREE.Mesh(boardGeo, boardMat);
     boardMesh.position.y = -0.25;
     boardMesh.receiveShadow = true;
@@ -353,7 +483,14 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
     const length = dir.length();
     const mid = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
     const geo = new THREE.BoxGeometry(length, 0.045, 0.09);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xdcb571, roughness: 0.45, metalness: 0.55, emissive: 0x000000 });
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xdcb571,
+      roughness: 0.3,
+      roughnessMap: metalRoughTex,
+      metalness: 0.8,
+      envMapIntensity: 1.15,
+      emissive: 0x000000,
+    });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(mid.x, 0.008, mid.z);
     mesh.rotation.y = -Math.atan2(dir.z, dir.x);
@@ -362,9 +499,19 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
   }
 
   function makeStoneMesh(owner) {
-    const mat = owner === "white"
-      ? new THREE.MeshStandardMaterial({ color: 0xe9d6a8, roughness: 0.35, metalness: 0.08, emissive: 0x000000 })
-      : new THREE.MeshStandardMaterial({ color: 0x211c16, roughness: 0.4, metalness: 0.12, emissive: 0x000000 });
+    const isWhite = owner === "white";
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: isWhite ? 0xe9d6a8 : 0x211c16,
+      roughness: isWhite ? 0.4 : 0.35,
+      roughnessMap: stoneNoiseTex,
+      bumpMap: stoneNoiseTex,
+      bumpScale: 0.004,
+      metalness: isWhite ? 0.06 : 0.1,
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.22,
+      envMapIntensity: 1,
+      emissive: 0x000000,
+    });
     const mesh = new THREE.Mesh(stoneGeometry, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -394,7 +541,16 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
 
       const marker = new THREE.Mesh(
         pointMarkerGeometry,
-        new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.8, metalness: 0.15, emissive: 0x000000 })
+        new THREE.MeshStandardMaterial({
+          color: 0x6b4a2a,
+          bumpMap: woodBumpTex,
+          bumpScale: 0.015,
+          roughness: 0.85,
+          roughnessMap: metalRoughTex,
+          metalness: 0.12,
+          envMapIntensity: 0.5,
+          emissive: 0x000000,
+        })
       );
       marker.position.set(pos.x, MARKER_HEIGHT / 2, pos.z);
       marker.receiveShadow = true;
@@ -804,30 +960,39 @@ import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer
     return `mailto:?subject=${subject}&body=${body}`;
   }
 
+  function dismissInvite(yourColor) {
+    localStorage.setItem(`muehle_invite_dismissed_${NET_GAME_ID}`, "1");
+    document.querySelector(".invite")?.remove();
+    const panelText = document.querySelector("#network-panel p");
+    if (panelText) panelText.textContent = `Du spielst als ${yourColor === "white" ? "Weiss" : "Schwarz"}.`;
+  }
+
   function setupNetworkPanel(data) {
     if (!netYourColorEl) return;
     netYourColorEl.textContent = data.yourColor === "white" ? "Weiss" : "Schwarz";
 
+    const dismissed = localStorage.getItem(`muehle_invite_dismissed_${NET_GAME_ID}`) === "1";
     const savedInvite = localStorage.getItem(`muehle_invite_${NET_GAME_ID}`);
-    if (savedInvite) {
+    if (savedInvite && !dismissed) {
       inviteLinkInput.value = savedInvite;
       mailInviteBtn.href = buildMailto(savedInvite);
     } else {
-      document.querySelector(".invite")?.remove();
-      const panelText = document.querySelector("#network-panel p");
-      if (panelText) panelText.textContent = `Du spielst als ${data.yourColor === "white" ? "Weiss" : "Schwarz"}.`;
+      dismissInvite(data.yourColor);
     }
   }
 
   copyLinkBtn?.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(inviteLinkInput.value);
-      const original = copyLinkBtn.textContent;
       copyLinkBtn.textContent = "Kopiert!";
-      setTimeout(() => { copyLinkBtn.textContent = original; }, 1500);
+      setTimeout(() => dismissInvite(state?.yourColor), 900);
     } catch (e) {
       inviteLinkInput.select();
     }
+  });
+
+  mailInviteBtn?.addEventListener("click", () => {
+    setTimeout(() => dismissInvite(state?.yourColor), 300);
   });
 
   netCreateBtn?.addEventListener("click", () => withBusy(async () => {

@@ -1,31 +1,31 @@
 # Mühle
 
-Nine Men's Morris, played in the browser. Flask serves the page and a small JSON API; the board is a 3D scene (Three.js/WebGL) driven by vanilla JS. No build step — Three.js loads straight from a CDN via an import map.
+Nine Men's Morris (Mühle), spielbar im Browser. Ein Flask-Backend liefert die Seite und eine kleine JSON-API; das Spielbrett ist eine 3D-Szene (Three.js/WebGL), gesteuert von reinem JavaScript. Kein Build-Schritt – Three.js wird direkt über ein Import-Map von einem CDN geladen.
 
-![Mühle board](docs/screenshot.jpg)
+![Mühle-Spielbrett](docs/screenshot.jpg)
 
 ## Features
 
-- **2 Spieler** — local hotseat, one browser, both colors.
-- **Gegen Computer** — a minimax (alpha-beta) AI opponent; choose to play White or Black.
-- **Online** — invite a friend over the network via a shareable link (`/g/<game_id>?t=<token>`), sent by email or copied manually. Moves sync between browsers automatically.
-- Full rule set: placing phase, sliding/moving phase, flying phase (3 stones left), mill formation and capture (with the mill-protection rule), stalemate detection.
-- Synthesized sound effects (Web Audio API, no audio files) and mill-flash animations.
-- Draggable 3D board (orbit/zoom camera) with the settings, status, and player panels floating in the scene alongside it.
+- **2 Spieler** — lokal auf demselben Gerät, ein Browser steuert beide Farben.
+- **Gegen Computer** — ein Minimax-Gegner (Alpha-Beta-Suche); Weiss oder Schwarz wählbar.
+- **Online** — einen Mitspieler per Link einladen (`/g/<game_id>?t=<token>`), per E-Mail versendet oder manuell kopiert. Züge werden automatisch zwischen den Browsern synchronisiert.
+- Vollständiges Regelwerk: Setzphase, Zugphase, Fliegen (bei nur noch 3 Steinen), Mühlenbildung und -schlagen (inklusive Schutzregel), Erkennung von Patt/Sieg.
+- Synthetische Soundeffekte (Web Audio API, keine Audiodateien) und Mühlen-Blitzanimationen.
+- Frei drehbares 3D-Brett (Kamera per Orbit/Zoom), Einstellungen, Status und Spielerpanels schweben als Teil der Szene mit.
 
-## Running it
+## Starten
 
-Requires [`uv`](https://docs.astral.sh/uv/).
+Benötigt [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
 uv run python app.py
 ```
 
-Then open `http://localhost:5001/`. The server also prints a LAN URL on startup for playing with someone else on the same network.
+Danach `http://localhost:5001/` öffnen. Der Server gibt beim Start zusätzlich eine LAN-URL aus, um im selben Netzwerk mit jemand anderem zu spielen.
 
-## Notes
+## Hinweise
 
-- The board needs internet access on first load — Three.js is fetched from a CDN (unpkg) rather than bundled.
-- Network game state is kept in memory and is lost on server restart.
-- For someone outside your network to join an online game, you'd need port-forwarding or a tunnel — the server only binds locally/on your LAN by default.
-- The dev server runs with `debug=False` intentionally: Werkzeug's interactive debugger is a remote-code-execution risk once the server is reachable from other machines, which network play requires.
+- Das Brett benötigt beim ersten Laden eine Internetverbindung — Three.js wird von einem CDN (unpkg) geladen statt gebündelt.
+- Der Zustand von Online-Spielen liegt nur im Arbeitsspeicher und geht bei einem Server-Neustart verloren.
+- Damit jemand ausserhalb deines Netzwerks einem Online-Spiel beitreten kann, braucht es Port-Weiterleitung oder einen Tunnel — der Server bindet standardmässig nur lokal/im LAN.
+- Der Dev-Server läuft absichtlich mit `debug=False`: Der interaktive Werkzeug-Debugger wäre ein Risiko für Remote Code Execution, sobald der Server von anderen Geräten erreichbar ist — was für Netzwerkspiele nötig ist.

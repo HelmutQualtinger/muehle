@@ -6,7 +6,7 @@
   <title>Mühle</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Vollkorn:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=UnifrakturMaguntia&family=Vollkorn:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script>window.MUEHLE_GAME_ID = {{ game_id|tojson }};</script>
   <script type="importmap">
@@ -27,6 +27,29 @@
     <div id="stage" aria-label="Mühle 3D-Spieltisch"></div>
 
     <!--
+      Lives outside #controls-src on purpose: this is a viewport-fixed overlay,
+      not a 3D-embedded panel, so game.js only toggles its [hidden] attribute
+      rather than mounting it into the CSS3D scene.
+    -->
+    <div id="rules-modal" class="rules-modal" hidden>
+      <div class="rules-modal__backdrop"></div>
+      <div class="parchment" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+        <button id="rules-close-btn" class="parchment__close" type="button" aria-label="Regeln schliessen">✕</button>
+        <div class="parchment__sheet">
+          <h2 id="rules-title">Spielregeln</h2>
+          <ol class="parchment__rules">
+            <li><strong>Setzphase.</strong> Jede Spielerin/jeder Spieler hat 9 Steine. Abwechselnd wird je ein Stein auf einen freien Punkt gesetzt.</li>
+            <li><strong>Mühle.</strong> Drei eigene Steine in einer Reihe entlang der Linien bilden eine Mühle. Wer eine Mühle bildet, darf sofort einen gegnerischen Stein vom Brett nehmen.</li>
+            <li><strong>Schutzregel.</strong> Steine, die Teil einer gegnerischen Mühle sind, dürfen nicht entfernt werden — außer alle gegnerischen Steine stehen in Mühlen.</li>
+            <li><strong>Zugphase.</strong> Sind alle Steine gesetzt, zieht man abwechselnd einen eigenen Stein entlang einer Linie auf einen benachbarten freien Punkt.</li>
+            <li><strong>Fliegen.</strong> Hat eine Spielerin/ein Spieler nur noch 3 Steine, darf sie/er auf jeden freien Punkt springen, nicht nur auf benachbarte.</li>
+            <li><strong>Sieg.</strong> Man gewinnt, wenn der Gegner nur noch 2 Steine hat oder keinen legalen Zug mehr machen kann.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!--
       Everything below is relocated into the 3D scene at startup (game.js
       moves each element into a CSS3DObject and never puts it back) — kept
       here, out of layout, only so the existing ids/classes/Jinja branches
@@ -34,6 +57,7 @@
     -->
     <div id="controls-src" hidden aria-hidden="true">
       <div class="header__actions">
+        <button id="rules-btn" class="icon-btn" type="button" aria-label="Spielregeln anzeigen" aria-haspopup="dialog">📜</button>
         <button id="mute-btn" class="icon-btn" type="button" aria-pressed="false" aria-label="Ton stumm schalten">🔊</button>
         {% if not game_id %}
         <button id="net-create-btn" class="btn btn--ghost" type="button">🌐 Online spielen</button>
