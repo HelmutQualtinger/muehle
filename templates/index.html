@@ -9,11 +9,30 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Vollkorn:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script>window.MUEHLE_GAME_ID = {{ game_id|tojson }};</script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body>
   <main class="app">
     <header class="app__header">
       <h1>Mühle</h1>
+    </header>
+
+    <div id="stage" aria-label="Mühle 3D-Spieltisch"></div>
+
+    <!--
+      Everything below is relocated into the 3D scene at startup (game.js
+      moves each element into a CSS3DObject and never puts it back) — kept
+      here, out of layout, only so the existing ids/classes/Jinja branches
+      stay the single source of truth for what controls exist.
+    -->
+    <div id="controls-src" hidden aria-hidden="true">
       <div class="header__actions">
         <button id="mute-btn" class="icon-btn" type="button" aria-pressed="false" aria-label="Ton stumm schalten">🔊</button>
         {% if not game_id %}
@@ -21,43 +40,37 @@
         {% endif %}
         <button id="new-game-btn" class="btn">{{ "Neues Spiel (Revanche)" if game_id else "Neues Spiel" }}</button>
       </div>
-    </header>
 
-    {% if not game_id %}
-    <div class="settings" id="local-settings">
-      <div class="settings__group" role="radiogroup" aria-label="Gegner">
-        <button type="button" class="chip is-active" data-opponent="human">2 Spieler</button>
-        <button type="button" class="chip" data-opponent="computer">Gegen Computer</button>
+      {% if not game_id %}
+      <div class="settings" id="local-settings">
+        <div class="settings__group" role="radiogroup" aria-label="Gegner">
+          <button type="button" class="chip is-active" data-opponent="human">2 Spieler</button>
+          <button type="button" class="chip" data-opponent="computer">Gegen Computer</button>
+        </div>
+        <div class="settings__group settings__group--color" role="radiogroup" aria-label="Farbe wählen" hidden>
+          <button type="button" class="chip is-active" data-color="white">Weiss spielen</button>
+          <button type="button" class="chip" data-color="black">Schwarz spielen</button>
+        </div>
       </div>
-      <div class="settings__group settings__group--color" role="radiogroup" aria-label="Farbe wählen" hidden>
-        <button type="button" class="chip is-active" data-color="white">Weiss spielen</button>
-        <button type="button" class="chip" data-color="black">Schwarz spielen</button>
+      {% endif %}
+
+      {% if game_id %}
+      <div class="network-panel" id="network-panel">
+        <p>Du spielst als <strong id="net-your-color">…</strong>. Einladungslink für deine Mitspielerin/deinen Mitspieler:</p>
+        <div class="invite">
+          <input id="invite-link-input" type="text" readonly aria-label="Einladungslink">
+          <button id="copy-link-btn" class="btn btn--small" type="button">Link kopieren</button>
+          <a id="mail-invite-btn" class="btn btn--small" href="#">Per E-Mail einladen</a>
+        </div>
       </div>
-    </div>
-    {% endif %}
+      {% endif %}
 
-    {% if game_id %}
-    <div class="network-panel" id="network-panel">
-      <p>Du spielst als <strong id="net-your-color">…</strong>. Einladungslink für deine Mitspielerin/deinen Mitspieler:</p>
-      <div class="invite">
-        <input id="invite-link-input" type="text" readonly aria-label="Einladungslink">
-        <button id="copy-link-btn" class="btn btn--small" type="button">Link kopieren</button>
-        <a id="mail-invite-btn" class="btn btn--small" href="#">Per E-Mail einladen</a>
-      </div>
-    </div>
-    {% endif %}
+      <p id="status" class="status" aria-live="polite">Lädt…</p>
 
-    <p id="status" class="status" aria-live="polite">Lädt…</p>
-
-    <div class="table">
       <section class="player player--black">
         <span class="player__label">Schwarz</span>
         <div class="stock" id="stock-black" aria-label="Schwarz: Steine zum Setzen"></div>
       </section>
-
-      <div class="board-wrap">
-        <svg id="board" viewBox="-0.8 -0.8 7.6 7.6" role="img" aria-label="Mühle-Spielbrett"></svg>
-      </div>
 
       <section class="player player--white">
         <span class="player__label">Weiss</span>
@@ -66,6 +79,6 @@
     </div>
   </main>
 
-  <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='js/game.js') }}"></script>
 </body>
 </html>

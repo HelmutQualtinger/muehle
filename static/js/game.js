@@ -1,11 +1,15 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer.js";
+
 (() => {
   "use strict";
 
-  const SVG_NS = "http://www.w3.org/2000/svg";
   const EVENT_DELAY_MS = 380;
   const NET_POLL_MS = 1800;
 
-  const boardEl = document.getElementById("board");
+  const boardEl = document.getElementById("stage");
+  const controlsSrc = document.getElementById("controls-src");
   const statusEl = document.getElementById("status");
   const stockWhiteEl = document.getElementById("stock-white");
   const stockBlackEl = document.getElementById("stock-black");
@@ -26,8 +30,6 @@
 
   let state = null;
   let selectedPoint = null;
-  let pointEls = [];
-  let stoneEls = new Array(24).fill(null);
   let busy = false;
 
   const settings = { opponent: "human", color: "white" };
@@ -135,76 +137,333 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // --------------------------------------------------------------- board --
+  // ------------------------------------------------------------- 3D scene --
 
-  function buildBoardSkeleton(points, edges) {
-    boardEl.innerHTML = "";
+  const STONE_RADIUS = 0.34;
+  const STONE_HEIGHT = 0.22;
+  const MARKER_HEIGHT = 0.03;
+  const STONE_Y = MARKER_HEIGHT + STONE_HEIGHT / 2;
+  const BRASS = 0xf0d29a;
+  const MILL_GLOW = 0xff6a4d;
+  const CSS3D_SCALE = 0.01; // 1 CSS px == 0.01 world units
 
-    const defs = document.createElementNS(SVG_NS, "defs");
-    defs.innerHTML = `
-      <radialGradient id="stoneWhite" cx="35%" cy="28%" r="75%">
-        <stop offset="0%" stop-color="#fdf7e8"/>
-        <stop offset="55%" stop-color="#e9d6a8"/>
-        <stop offset="100%" stop-color="#b89860"/>
-      </radialGradient>
-      <radialGradient id="stoneBlack" cx="35%" cy="28%" r="75%">
-        <stop offset="0%" stop-color="#5a564e"/>
-        <stop offset="55%" stop-color="#221f1b"/>
-        <stop offset="100%" stop-color="#000000"/>
-      </radialGradient>
-    `;
-    boardEl.appendChild(defs);
+  const stoneGeometry = new THREE.CylinderGeometry(STONE_RADIUS - 0.02, STONE_RADIUS, STONE_HEIGHT, 40);
+  const pointMarkerGeometry = new THREE.CylinderGeometry(0.13, 0.15, MARKER_HEIGHT, 24);
+  const pointHitGeometry = new THREE.CylinderGeometry(0.42, 0.42, 0.5, 16);
 
-    const lineGroup = document.createElementNS(SVG_NS, "g");
-    edges.forEach(([a, b]) => {
-      const [x1, y1] = points[a];
-      const [x2, y2] = points[b];
-      const line = document.createElementNS(SVG_NS, "line");
-      line.setAttribute("x1", x1);
-      line.setAttribute("y1", y1);
-      line.setAttribute("x2", x2);
-      line.setAttribute("y2", y2);
-      line.setAttribute("class", "board-line");
-      lineGroup.appendChild(line);
+  let sceneReady = false;
+  let renderer, cssRenderer, scene, cssScene, camera, controls;
+  let lineGroup, pointGroup, stoneGroup, boardMesh;
+  let worldPoints = [];
+  let pointMarkerMeshes = [];
+  let pointHitMeshes = [];
+  let lineMeshByKey = new Map();
+  let stoneEls = new Array(24).fill(null); // { mesh, baseY }
+  let popTweens = [];
+  let millTweens = [];
+  let raycaster = new THREE.Raycaster();
+  let pointerDownAt = null;
+
+  function edgeKey(a, b) {
+    return a < b ? `${a}_${b}` : `${b}_${a}`;
+  }
+
+  function backOut(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  function initThree() {
+    if (sceneReady) return;
+    sceneReady = true;
+
+    scene = new THREE.Scene();
+    cssScene = new THREE.Scene();
+
+    camera = new THREE.PerspectiveCamera(46, 1, 0.1, 100);
+    camera.position.set(0, 8.6, 8.4);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    boardEl.appendChild(renderer.domElement);
+
+    cssRenderer = new CSS3DRenderer();
+    cssRenderer.domElement.classList.add("css3d-layer");
+    boardEl.appendChild(cssRenderer.domElement);
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.4, -1.1);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 6;
+    controls.maxDistance = 17;
+    controls.minPolarAngle = 0.25;
+    controls.maxPolarAngle = Math.PI / 2 - 0.04;
+    controls.enablePan = false;
+
+    scene.add(new THREE.AmbientLight(0xfff6e4, 0.75));
+
+    const key = new THREE.DirectionalLight(0xffedc4, 1.15);
+    key.position.set(4, 8, 3);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.left = -7;
+    key.shadow.camera.right = 7;
+    key.shadow.camera.top = 7;
+    key.shadow.camera.bottom = -7;
+    scene.add(key);
+
+    const fill = new THREE.DirectionalLight(0xd8e4ff, 0.3);
+    fill.position.set(-5, 4, -4);
+    scene.add(fill);
+
+    const boardGeo = new THREE.BoxGeometry(8.4, 0.5, 8.4);
+    const boardMat = new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: 0.7, metalness: 0.05 });
+    boardMesh = new THREE.Mesh(boardGeo, boardMat);
+    boardMesh.position.y = -0.25;
+    boardMesh.receiveShadow = true;
+    scene.add(boardMesh);
+
+    lineGroup = new THREE.Group();
+    pointGroup = new THREE.Group();
+    stoneGroup = new THREE.Group();
+    scene.add(lineGroup, pointGroup, stoneGroup);
+
+    setupControls();
+
+    new ResizeObserver(onResize).observe(boardEl);
+    onResize();
+    // CSS3DObject elements only enter the live document once CSS3DRenderer
+    // has rendered at least one frame — do that synchronously now so code
+    // that immediately queries the document (e.g. the first render() call)
+    // doesn't see them as detached.
+    cssRenderer.render(cssScene, camera);
+
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+
+    requestAnimationFrame(animate);
+  }
+
+  function onResize() {
+    const w = boardEl.clientWidth;
+    const h = boardEl.clientHeight || w;
+    if (!w || !h) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false);
+    cssRenderer.setSize(w, h);
+  }
+
+  // ---------------------------------------------------- 3D-embedded controls --
+
+  function mountControl(el, x, y, z, rotX = 0, rotY = 0, rotZ = 0) {
+    if (!el) return;
+    el.remove();
+    const obj = new CSS3DObject(el);
+    obj.position.set(x, y, z);
+    obj.rotation.set(rotX, rotY, rotZ);
+    obj.scale.set(CSS3D_SCALE, CSS3D_SCALE, CSS3D_SCALE);
+    cssScene.add(obj);
+    return obj;
+  }
+
+  function setupControls() {
+    mountControl(controlsSrc.querySelector(".header__actions"), 0, 2.7, -6.3, -0.3);
+    mountControl(controlsSrc.querySelector("#local-settings"), 0, 1.8, -5.5, -0.3);
+    mountControl(controlsSrc.querySelector("#network-panel"), 0, 1.8, -5.5, -0.3);
+    mountControl(controlsSrc.querySelector("#status"), 0, 1.15, -4.8, -0.3);
+    mountControl(controlsSrc.querySelector(".player--black"), -5.3, 0.85, -0.5, -0.08, 0.7);
+    mountControl(controlsSrc.querySelector(".player--white"), 5.3, 0.85, -0.5, -0.08, -0.7);
+  }
+
+  function animate(now) {
+    requestAnimationFrame(animate);
+    controls.update();
+
+    popTweens = popTweens.filter((pt) => {
+      const t = Math.min(1, (now - pt.start) / 260);
+      pt.mesh.scale.setScalar(t >= 1 ? 1 : Math.max(0, backOut(t)));
+      return t < 1;
     });
-    boardEl.appendChild(lineGroup);
 
-    const millFlashGroup = document.createElementNS(SVG_NS, "g");
-    millFlashGroup.id = "mill-flash-group";
-    boardEl.appendChild(millFlashGroup);
-
-    const pointGroup = document.createElementNS(SVG_NS, "g");
-    pointEls = points.map(([x, y], i) => {
-      // Larger invisible hit target layered under the visible dot, so clicking
-      // near (not just exactly on) a point registers — points are the smallest
-      // targets on the board and are easy to miss otherwise.
-      const hit = document.createElementNS(SVG_NS, "circle");
-      hit.setAttribute("cx", x);
-      hit.setAttribute("cy", y);
-      hit.setAttribute("r", 0.34);
-      hit.setAttribute("fill", "transparent");
-      hit.dataset.point = i;
-      hit.addEventListener("click", () => onPointClick(i));
-      pointGroup.appendChild(hit);
-
-      const c = document.createElementNS(SVG_NS, "circle");
-      c.setAttribute("cx", x);
-      c.setAttribute("cy", y);
-      c.setAttribute("r", 0.16);
-      c.setAttribute("class", "board-point");
-      c.dataset.point = i;
-      c.style.pointerEvents = "none";
-      pointGroup.appendChild(c);
-      return c;
+    millTweens = millTweens.filter((mt) => {
+      const t = Math.min(1, (now - mt.start) / 900);
+      mt.mesh.material.emissive.setHex(MILL_GLOW);
+      mt.mesh.material.emissiveIntensity = 0.9 * (1 - t);
+      return t < 1;
     });
-    boardEl.appendChild(pointGroup);
 
-    const stoneGroup = document.createElementNS(SVG_NS, "g");
-    stoneGroup.id = "stone-group";
-    boardEl.appendChild(stoneGroup);
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.005);
+    pointMarkerMeshes.forEach((m) => {
+      if (!m) return;
+      if (m.userData.legal) {
+        m.material.emissive.setHex(BRASS);
+        m.material.emissiveIntensity = 0.25 + 0.5 * pulse;
+      } else {
+        m.material.emissiveIntensity = 0;
+      }
+    });
 
+    stoneEls.forEach((entry) => {
+      if (!entry) return;
+      const { mesh } = entry;
+      if (mesh.userData.removable) {
+        mesh.material.emissive.setHex(MILL_GLOW);
+        mesh.material.emissiveIntensity = 0.15 + 0.45 * pulse;
+      } else if (mesh.userData.selected) {
+        mesh.material.emissive.setHex(BRASS);
+        mesh.material.emissiveIntensity = 0.3 + 0.3 * pulse;
+      } else {
+        mesh.material.emissiveIntensity = 0;
+      }
+      const targetY = entry.baseY + (mesh.userData.selected ? 0.12 : 0);
+      mesh.position.y += (targetY - mesh.position.y) * 0.2;
+    });
+
+    renderer.render(scene, camera);
+    cssRenderer.render(cssScene, camera);
+  }
+
+  function clearGroup(group) {
+    while (group.children.length) {
+      const child = group.children.pop();
+      group.remove(child);
+      child.geometry?.dispose();
+      child.material?.dispose();
+    }
+  }
+
+  function disposeStones() {
+    stoneEls.forEach((entry) => {
+      if (!entry) return;
+      stoneGroup.remove(entry.mesh);
+      entry.mesh.material.dispose();
+    });
     stoneEls = new Array(24).fill(null);
   }
+
+  function makeLineMesh(pa, pb) {
+    const dir = new THREE.Vector3().subVectors(pb, pa);
+    const length = dir.length();
+    const mid = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
+    const geo = new THREE.BoxGeometry(length, 0.045, 0.09);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xdcb571, roughness: 0.45, metalness: 0.55, emissive: 0x000000 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(mid.x, 0.008, mid.z);
+    mesh.rotation.y = -Math.atan2(dir.z, dir.x);
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  function makeStoneMesh(owner) {
+    const mat = owner === "white"
+      ? new THREE.MeshStandardMaterial({ color: 0xe9d6a8, roughness: 0.35, metalness: 0.08, emissive: 0x000000 })
+      : new THREE.MeshStandardMaterial({ color: 0x211c16, roughness: 0.4, metalness: 0.12, emissive: 0x000000 });
+    const mesh = new THREE.Mesh(stoneGeometry, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  function buildBoardSkeleton(points, edges) {
+    initThree();
+    disposeStones();
+    clearGroup(lineGroup);
+    clearGroup(pointGroup);
+    lineMeshByKey.clear();
+    pointMarkerMeshes = [];
+    pointHitMeshes = [];
+    selectedPoint = null;
+
+    worldPoints = points.map(([x, y]) => new THREE.Vector3(x - 3, 0, y - 3));
+
+    edges.forEach(([a, b]) => {
+      const mesh = makeLineMesh(worldPoints[a], worldPoints[b]);
+      lineGroup.add(mesh);
+      lineMeshByKey.set(edgeKey(a, b), mesh);
+    });
+
+    points.forEach((_, i) => {
+      const pos = worldPoints[i];
+
+      const marker = new THREE.Mesh(
+        pointMarkerGeometry,
+        new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.8, metalness: 0.15, emissive: 0x000000 })
+      );
+      marker.position.set(pos.x, MARKER_HEIGHT / 2, pos.z);
+      marker.receiveShadow = true;
+      pointGroup.add(marker);
+      pointMarkerMeshes[i] = marker;
+
+      const hit = new THREE.Mesh(
+        pointHitGeometry,
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+      );
+      hit.position.set(pos.x, 0.12, pos.z);
+      hit.userData.point = i;
+      pointGroup.add(hit);
+      pointHitMeshes[i] = hit;
+    });
+  }
+
+  // ------------------------------------------------------------- picking --
+
+  function ndcFromEvent(e) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+  }
+
+  function raycastPick(e) {
+    raycaster.setFromCamera(ndcFromEvent(e), camera);
+
+    const stoneMeshes = stoneEls.filter(Boolean).map((entry) => entry.mesh);
+    const stoneHits = raycaster.intersectObjects(stoneMeshes, false);
+    if (stoneHits.length) {
+      const mesh = stoneHits[0].object;
+      return { kind: "stone", point: mesh.userData.point, owner: mesh.userData.owner };
+    }
+
+    const hitMeshes = pointHitMeshes.filter(Boolean);
+    const pointHits = raycaster.intersectObjects(hitMeshes, false);
+    if (pointHits.length) {
+      return { kind: "point", point: pointHits[0].object.userData.point };
+    }
+    return null;
+  }
+
+  function onPointerDown(e) {
+    pointerDownAt = { x: e.clientX, y: e.clientY };
+  }
+
+  function onPointerUp(e) {
+    if (!pointerDownAt) return;
+    const dx = e.clientX - pointerDownAt.x;
+    const dy = e.clientY - pointerDownAt.y;
+    pointerDownAt = null;
+    if (Math.hypot(dx, dy) > 6) return; // treat as a camera drag, not a click
+
+    const hit = raycastPick(e);
+    if (!hit) return;
+    if (hit.kind === "stone") onStoneClick(hit.point, hit.owner);
+    else onPointClick(hit.point);
+  }
+
+  function onPointerMove(e) {
+    if (!renderer) return;
+    const hit = busy ? null : raycastPick(e);
+    renderer.domElement.style.cursor = busy ? "wait" : hit ? "pointer" : "grab";
+  }
+
+  // --------------------------------------------------------------- board --
 
   function renderStock(el, color, toPlace) {
     el.className = `stock stock--${color}`;
@@ -265,70 +524,50 @@
 
     const legalTargets = selectedPoint !== null ? legalDestinationsFrom(selectedPoint) : new Set();
 
-    pointEls.forEach((c, i) => {
+    pointMarkerMeshes.forEach((m, i) => {
+      if (!m) return;
       const isEmpty = state.board[i] === null;
-      c.classList.toggle("is-empty-legal", isEmpty && legalTargets.has(i));
+      m.userData.legal = isEmpty && legalTargets.has(i);
     });
 
-    const stoneGroup = document.getElementById("stone-group");
     state.board.forEach((owner, i) => {
       const existing = stoneEls[i];
       if (owner === null) {
         if (existing) {
-          existing.remove();
+          stoneGroup.remove(existing.mesh);
+          existing.mesh.material.dispose();
           stoneEls[i] = null;
         }
         return;
       }
 
-      let circle = existing;
-      const isNew = !circle;
-      if (isNew) {
-        circle = document.createElementNS(SVG_NS, "circle");
-        const [x, y] = state.points[i];
-        circle.setAttribute("cx", x);
-        circle.setAttribute("cy", y);
-        circle.setAttribute("r", 0.26);
-        circle.dataset.point = i;
-        circle.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          onStoneClick(i, owner);
-        });
-        stoneGroup.appendChild(circle);
-        stoneEls[i] = circle;
+      let entry = existing;
+      if (!entry) {
+        const mesh = makeStoneMesh(owner);
+        const pos = worldPoints[i];
+        mesh.position.set(pos.x, STONE_Y, pos.z);
+        mesh.userData.point = i;
+        mesh.userData.owner = owner;
+        stoneGroup.add(mesh);
+        entry = { mesh, baseY: STONE_Y };
+        stoneEls[i] = entry;
+        if (animateNew) {
+          mesh.scale.setScalar(0);
+          popTweens.push({ mesh, start: performance.now() });
+        }
       }
 
-      circle.setAttribute("class", `stone stone-body--${owner}` + (isNew && animateNew ? " stone-enter" : ""));
-
-      const canSelect =
-        !state.winner &&
-        !busy &&
-        ((state.pendingRemoval && owner !== state.turn && isRemovable(i)) ||
-          (!state.pendingRemoval && state.phase === "moving" && owner === state.turn));
-
-      circle.classList.toggle("is-selectable", canSelect);
-      circle.classList.toggle("is-selected", selectedPoint === i);
-      circle.classList.toggle("is-removable", !busy && !!state.pendingRemoval && owner !== state.turn && isRemovable(i));
+      entry.mesh.userData.removable = !busy && !!state.pendingRemoval && owner !== state.turn && isRemovable(i);
+      entry.mesh.userData.selected = selectedPoint === i;
     });
   }
 
   function flashMill(point, owner) {
     const mill = millsContaining(point).find((m) => m.every((p) => state.board[p] === owner));
     if (!mill) return;
-    const group = document.getElementById("mill-flash-group");
-    mill.forEach((p, idx) => {
-      if (idx === 2) return;
-      const next = mill[idx + 1];
-      const [x1, y1] = state.points[p];
-      const [x2, y2] = state.points[next];
-      const line = document.createElementNS(SVG_NS, "line");
-      line.setAttribute("x1", x1);
-      line.setAttribute("y1", y1);
-      line.setAttribute("x2", x2);
-      line.setAttribute("y2", y2);
-      line.setAttribute("class", "mill-flash is-active");
-      group.appendChild(line);
-      line.addEventListener("animationend", () => line.remove());
+    [[mill[0], mill[1]], [mill[1], mill[2]]].forEach(([a, b]) => {
+      const mesh = lineMeshByKey.get(edgeKey(a, b));
+      if (mesh) millTweens.push({ mesh, start: performance.now() });
     });
   }
 
