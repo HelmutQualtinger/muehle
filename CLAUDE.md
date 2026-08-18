@@ -15,6 +15,12 @@ uv run python app.py        # start the dev server on http://localhost:5001/
 uv add <package>             # add a dependency
 ```
 
+A multi-stage Alpine `Dockerfile` (builder stage resolves deps with `uv`, runtime stage is bare `python:3.12-alpine` running as a non-root `app` user) and `docker-compose.yml` are also provided for containerized deployment:
+
+```bash
+docker compose up --build    # build and run on http://localhost:5001/
+```
+
 There is no test suite, linter, or build step configured. Ad-hoc verification during development is typically done by importing `game.py`/`ai.py` directly in a `uv run python -c "..."` one-liner, or by driving `app.py`'s Flask routes through `app.test_client()`.
 
 The server prints its LAN URL on startup (for same-network multiplayer testing) and binds to `0.0.0.0`. `debug=False` is intentional — the Werkzeug interactive debugger is a remote-code-execution risk once the server is reachable from other machines on the network, so do not re-enable `debug=True` without also restricting the bind address back to loopback-only.
@@ -32,7 +38,10 @@ The server prints its LAN URL on startup (for same-network multiplayer testing) 
 - The **same event-replay mechanism drives animation/sound for all three modes** on the frontend — this is the key invariant to preserve when touching either side of the API: any new server-side action must emit an event of a type the frontend's `applyEventToLive()` (in `game.js`) knows how to fold into its local board projection.
 
 **`static/js/game.js`** — single IIFE (still no bundler/build step — edit and refresh), but loaded as an ES module (`<script type="module">`) so it can `import` Three.js and its `OrbitControls`/`CSS3DRenderer` addons from a CDN via an `importmap` in `templates/index.html` (`unpkg.com/three@…`); this is the one place the frontend depends on an external library. Key pieces:
-- The board is a Three.js scene rendered into `#stage`, built once (`initThree` + `buildBoardSkeleton`) then updated in place (`render`) by diffing `state.board` against tracked meshes (`stoneEls`). Two layers overlap inside `#stage`: a WebGL `<canvas>` underneath (board slab, point markers, stone meshes) and a `CSS3DRenderer` layer on top.
+
+- The board fills the entire viewport (no bordered card) and is a Three.js scene rendered into `#stage`, built once (`initThree` + `buildBoardSkeleton`) then updated in place (`render`) by diffing `state.board` against tracked meshes (`stoneEls`). Two layers overlap inside `#stage`: a WebGL `<canvas>` underneath (board slab, point markers, stone meshes) and a `CSS3DRenderer` layer on top. The board, brass lines, and stones use procedural canvas textures (wood grain, brushed-metal noise) plus a PMREM environment map, clearcoat stone material, and ACES tone mapping for a photorealistic look.
+- The backdrop is a night sky: a starfield/galaxy/Milky Way texture painted on a canvas and mapped as a rotating equirectangular skybox, plus a `THREE.Points` layer of crisp pinpoint stars on top, so it parallaxes correctly as the camera orbits.
+- A rules button (📜) opens `#rules-modal`, a scroll-styled parchment overlay (`.parchment`) listing the full rule set in an old German blackletter face (UnifrakturMaguntia).
 - The CSS3D layer doesn't hold new markup — at startup `setupControls()`/`mountControl()` detaches the real HTML control panels (header actions, settings, network panel, status, player stocks) out of the hidden `#controls-src` container in `templates/index.html` and re-mounts each as a `CSS3DObject` positioned in 3D space around the board, so `templates/index.html`'s ids/classes/Jinja branches stay the single source of truth for what controls exist even though they're never shown in normal page flow.
 - Point/stone interaction is raycasting-based (`raycastPick`) rather than DOM click listeners: `pointHitMeshes` are invisible larger hit-cylinders layered over the small visible point markers (same click-miss problem SVG had, solved the same way). `onPointerDown`/`onPointerUp` compare cursor start/end position to distinguish a click from an `OrbitControls` camera drag before dispatching to `onPointClick`/`onStoneClick`.
 - Animations that used to be CSS keyframes/SVG classes are now per-frame tweens applied in `animate()`: stone pop-in (`popTweens`, a back-out ease on mesh scale), mill-flash (`millTweens`, emissive intensity decay on the mill's line meshes), and the pulsing glow on legal-move markers / removable stones (driven straight off `Math.sin(now * …)` each frame, no tween list needed since they're states, not one-shot events).

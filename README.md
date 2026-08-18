@@ -11,7 +11,8 @@ Nine Men's Morris (Mühle), spielbar im Browser. Ein Flask-Backend liefert die S
 - **Online** — einen Mitspieler per Link einladen (`/g/<game_id>?t=<token>`), per E-Mail versendet oder manuell kopiert. Züge werden automatisch zwischen den Browsern synchronisiert.
 - Vollständiges Regelwerk: Setzphase, Zugphase, Fliegen (bei nur noch 3 Steinen), Mühlenbildung und -schlagen (inklusive Schutzregel), Erkennung von Patt/Sieg.
 - Synthetische Soundeffekte (Web Audio API, keine Audiodateien) und Mühlen-Blitzanimationen.
-- Frei drehbares 3D-Brett (Kamera per Orbit/Zoom), Einstellungen, Status und Spielerpanels schweben als Teil der Szene mit.
+- Frei drehbares, bildschirmfüllendes 3D-Brett (Kamera per Orbit/Zoom) mit fotorealistischen Materialien vor einem sternenklaren Nachthimmel; Einstellungen, Status und Spielerpanels schweben als Teil der Szene mit.
+- Regelwerk zum Nachschlagen: ein Button (📜) öffnet eine pergamentartige Übersicht aller Spielregeln.
 
 ## Starten
 
@@ -22,6 +23,14 @@ uv run python app.py
 ```
 
 Danach `http://localhost:5001/` öffnen. Der Server gibt beim Start zusätzlich eine LAN-URL aus, um im selben Netzwerk mit jemand anderem zu spielen.
+
+Alternativ per Docker:
+
+```bash
+docker compose up --build
+```
+
+startet den Server ebenfalls auf `http://localhost:5001/`, in einem schlanken Alpine-Container ohne lokale Python/`uv`-Installation.
 
 ## Hinweise
 
