@@ -23,4 +23,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 USER app
 EXPOSE 5002
 
-CMD ["python", "app.py"]
+# One worker: NET_GAMES and the per-process session secret are in-memory,
+# so multiple worker processes would fragment game/session state.
+CMD ["gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:5002", "app:app"]
