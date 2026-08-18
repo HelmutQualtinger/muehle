@@ -47,13 +47,13 @@ def new_game():
     }
 
 
-def _forms_mill(board, point, player):
+def forms_mill(board, point, player):
     return any(all(board[p] == player for p in mill) for mill in MILLS_BY_POINT[point])
 
 
 def removable_targets(board, opponent):
     opp_points = [i for i in range(24) if board[i] == opponent]
-    in_mill = [p for p in opp_points if _forms_mill(board, p, opponent)]
+    in_mill = [p for p in opp_points if forms_mill(board, p, opponent)]
     non_mill = [p for p in opp_points if p not in in_mill]
     return non_mill if non_mill else opp_points
 
@@ -137,7 +137,7 @@ def place(state, point):
     state["stones_to_place"][player] -= 1
     state["stones_on_board"][player] += 1
 
-    if _forms_mill(state["board"], point, player):
+    if forms_mill(state["board"], point, player):
         state["pending_removal"] = True
         _set_message(state)
     else:
@@ -164,7 +164,7 @@ def move(state, frm, to):
     board[frm] = None
     board[to] = player
 
-    if _forms_mill(board, to, player):
+    if forms_mill(board, to, player):
         state["pending_removal"] = True
         _set_message(state)
     else:

@@ -281,6 +281,107 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     return tex;
   }
 
+  function makeSkyTexture() {
+    const w = 1024, h = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#04060d");
+    grad.addColorStop(0.35, "#0a1130");
+    grad.addColorStop(0.55, "#0d1a42");
+    grad.addColorStop(0.78, "#0a1130");
+    grad.addColorStop(1, "#03040a");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // soft distant galaxies / nebulae
+    [
+      { x: 0.18 * w, y: 0.32 * h, r: 150, c: "rgba(130, 95, 210, 0.24)" },
+      { x: 0.78 * w, y: 0.2 * h, r: 120, c: "rgba(80, 165, 215, 0.2)" },
+      { x: 0.55 * w, y: 0.66 * h, r: 170, c: "rgba(205, 110, 175, 0.16)" },
+      { x: 0.35 * w, y: 0.78 * h, r: 100, c: "rgba(90, 130, 220, 0.14)" },
+    ].forEach(({ x, y, r, c }) => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, c);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.random() * Math.PI);
+      ctx.scale(1, 0.55);
+      ctx.translate(-x, -y);
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      ctx.restore();
+    });
+
+    // faint milky-way band
+    ctx.save();
+    ctx.translate(w * 0.5, h * 0.42);
+    ctx.rotate(-0.22);
+    const band = ctx.createLinearGradient(-w, 0, w, 0);
+    band.addColorStop(0, "rgba(255,255,255,0)");
+    band.addColorStop(0.5, "rgba(210,220,255,0.10)");
+    band.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = band;
+    ctx.fillRect(-w, -h * 0.1, w * 2, h * 0.2);
+    ctx.restore();
+
+    // scattered stars
+    for (let i = 0; i < 700; i++) {
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const r = Math.random() * 1.3 + 0.2;
+      ctx.fillStyle = `rgba(255,255,255,${0.35 + Math.random() * 0.55})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // a handful of brighter, glowing stars
+    for (let i = 0; i < 16; i++) {
+      const x = Math.random() * w;
+      const y = Math.random() * h * 0.92;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 6);
+      g.addColorStop(0, "rgba(255,255,255,0.9)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    return tex;
+  }
+
+  function makeStarField() {
+    const count = 900;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 44 + Math.random() * 6;
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.cos(phi);
+      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.16,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+    return new THREE.Points(geo, mat);
+  }
+
   function initThree() {
     if (sceneReady) return;
     sceneReady = true;
@@ -312,6 +413,12 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     stoneNoiseTex = makeSpeckleTexture(256);
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
     [woodColorTex, woodBumpTex, metalRoughTex, stoneNoiseTex].forEach((t) => { t.anisotropy = maxAniso; });
+
+    // Night-sky backdrop: a starfield + soft galaxy blobs painted on a
+    // canvas and mapped as a proper rotating skybox (not a flat CSS image),
+    // plus a THREE.Points layer for crisp pinpoint stars on top.
+    scene.background = makeSkyTexture();
+    scene.add(makeStarField());
 
     cssRenderer = new CSS3DRenderer();
     cssRenderer.domElement.classList.add("css3d-layer");
