@@ -1,0 +1,7 @@
+services:
+  muehle:
+    build: .
+    image: muehle:minimal
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
