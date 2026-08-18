@@ -21,5 +21,6 @@ COPY --from=builder --chown=app:app /app /app
 ENV PATH="/app/.venv/bin:$PATH"
 
 USER app
-EXPOSE 5001
+EXPOSE 5002
+
 CMD ["python", "app.py"]

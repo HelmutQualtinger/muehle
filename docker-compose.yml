@@ -2,6 +2,11 @@ services:
   muehle:
     build: .
     image: muehle:minimal
-    ports:
-      - "5001:5001"
+    container_name: muehle
     restart: unless-stopped
+    networks:
+      - reverse-proxy
+
+networks:
+  reverse-proxy:
+    external: true
