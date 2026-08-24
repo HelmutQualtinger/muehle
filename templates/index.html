@@ -3,7 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mühle</title>
+  <title>{{ page_title | default("Mühle") }}</title>
+  <meta name="description" content="{{ page_description | default('Mühle (Nine Men\'s Morris) online spielen — das klassische Strategiespiel in fotorealistischer 3D-Grafik. Kostenlos, sofort spielbar, keine Anmeldung nötig.') }}">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Mühle">
+  <meta property="og:locale" content="de_DE">
+  <meta property="og:title" content="{{ page_title | default('Mühle — Nine Men\'s Morris in 3D') }}">
+  <meta property="og:description" content="{{ page_description | default('Das klassische Strategiespiel in fotorealistischer 3D-Grafik. Kostenlos, sofort spielbar, keine Anmeldung nötig.') }}">
+  {% if page_url %}<meta property="og:url" content="{{ page_url }}">{% endif %}
+  {% if preview_image_url %}
+  <meta property="og:image" content="{{ preview_image_url }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Das Mühle-Spielbrett in 3D bei Nacht">
+  {% endif %}
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ page_title | default('Mühle — Nine Men\'s Morris in 3D') }}">
+  <meta name="twitter:description" content="{{ page_description | default('Das klassische Strategiespiel in fotorealistischer 3D-Grafik. Kostenlos, sofort spielbar.') }}">
+  {% if preview_image_url %}<meta name="twitter:image" content="{{ preview_image_url }}">{% endif %}
+
+  <meta name="theme-color" content="#0a0e27">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=UnifrakturMaguntia&family=Vollkorn:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">

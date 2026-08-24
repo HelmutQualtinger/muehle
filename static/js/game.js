@@ -35,6 +35,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   let state = null;
   let selectedPoint = null;
   let busy = false;
+  let spaceship = null;
 
   const settings = { opponent: "human", color: "white" };
 
@@ -382,6 +383,51 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     return new THREE.Points(geo, mat);
   }
 
+  function makeSpaceship() {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x6699ff,
+      emissive: 0x3366ff,
+      emissiveIntensity: 2.0,
+      metalness: 0.8,
+      roughness: 0.2
+    });
+
+    const saucer = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.15, 32), mat);
+    saucer.position.y = 0.1;
+    group.add(saucer);
+
+    const bridge = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), mat);
+    bridge.position.y = 0.18;
+    bridge.position.z = -0.08;
+    group.add(bridge);
+
+    const nacelle1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.2, 8), mat);
+    nacelle1.rotation.z = Math.PI / 2;
+    nacelle1.position.set(-0.35, -0.05, 0);
+    group.add(nacelle1);
+
+    const nacelle2 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.2, 8), mat);
+    nacelle2.rotation.z = Math.PI / 2;
+    nacelle2.position.set(0.35, -0.05, 0);
+    group.add(nacelle2);
+
+    const engine1 = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.25, 16), mat);
+    engine1.position.set(-0.35, -0.05, 0.6);
+    engine1.rotation.x = Math.PI;
+    group.add(engine1);
+
+    const engine2 = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.25, 16), mat);
+    engine2.position.set(0.35, -0.05, 0.6);
+    engine2.rotation.x = Math.PI;
+    group.add(engine2);
+
+    group.scale.set(3.5, 3.5, 3.5);
+    group.castShadow = true;
+    group.receiveShadow = true;
+    return group;
+  }
+
   function initThree() {
     if (sceneReady) return;
     sceneReady = true;
@@ -420,6 +466,9 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     scene.background = makeSkyTexture();
     scene.add(makeStarField());
 
+    spaceship = makeSpaceship();
+    scene.add(spaceship);
+
     cssRenderer = new CSS3DRenderer();
     cssRenderer.domElement.classList.add("css3d-layer");
     boardEl.appendChild(cssRenderer.domElement);
@@ -428,8 +477,9 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     controls.target.set(0, 0.4, -1.1);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.minDistance = 6;
-    controls.maxDistance = 17;
+    controls.zoomSpeed = 0.8;
+    controls.minDistance = 3;
+    controls.maxDistance = 30;
     controls.minPolarAngle = 0.25;
     controls.maxPolarAngle = Math.PI / 2 - 0.04;
     controls.enablePan = false;
@@ -522,6 +572,16 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   function animate(now) {
     requestAnimationFrame(animate);
     controls.update();
+
+    if (spaceship) {
+      const cycle = 16000;
+      const t = (now % cycle) / cycle;
+      const angle = t * Math.PI * 2;
+      const x = 12 * Math.cos(angle);
+      const z = -1.1 + 10 * Math.sin(angle);
+      const y = 8 + 2 * Math.sin(t * Math.PI * 4);
+      spaceship.position.set(x, y, z);
+    }
 
     popTweens = popTweens.filter((pt) => {
       const t = Math.min(1, (now - pt.start) / 260);

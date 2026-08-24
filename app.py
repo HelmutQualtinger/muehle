@@ -2,12 +2,16 @@ import secrets
 import socket
 
 from flask import Flask, jsonify, render_template, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import ai
 import game
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
+# Trust the reverse proxy's X-Forwarded-Proto/Host so request.url / url_for(_external=True)
+# report https:// (the proxy terminates TLS; the container only ever sees plain HTTP).
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 DEFAULT_META = {"opponent": "human", "human_color": "white"}
 
@@ -132,14 +136,33 @@ def _public_net_state(entry, your_color):
     }
 
 
+def _preview_context():
+    # Social-media crawlers (Facebook, WhatsApp, ...) sometimes hit the plain-HTTP
+    # port directly rather than following an HTTPS redirect, and ProxyFix then
+    # honestly reports scheme "http" from X-Forwarded-Proto. The site is only ever
+    # meant to be shared as https, so the OG/Twitter tags hardcode that scheme
+    # instead of trusting the scheme of whatever request happened to arrive.
+    host = request.host
+    return {
+        "page_url": f"https://{host}{request.path}",
+        "preview_image_url": f"https://{host}{url_for('static', filename='img/preview.jpg')}",
+    }
+
+
 @app.get("/")
 def index():
-    return render_template("index.html", game_id=None)
+    return render_template("index.html", game_id=None, **_preview_context())
 
 
 @app.get("/g/<game_id>")
 def net_game_page(game_id):
-    return render_template("index.html", game_id=game_id)
+    return render_template(
+        "index.html",
+        game_id=game_id,
+        page_title="Mühle — Partie beitreten",
+        page_description="Du wurdest zu einer Partie Mühle eingeladen. Tritt jetzt bei und spiele live gegen deinen Gegner in 3D.",
+        **_preview_context(),
+    )
 
 
 @app.get("/api/state")
