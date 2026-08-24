@@ -4,6 +4,8 @@ services:
     image: muehle:minimal
     container_name: muehle
     restart: unless-stopped
+    ports:
+      - "5001:5002"
     networks:
       - reverse-proxy
 

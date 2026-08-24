@@ -16,6 +16,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const stockBlackEl = document.getElementById("stock-black");
   const newGameBtn = document.getElementById("new-game-btn");
   const muteBtn = document.getElementById("mute-btn");
+  const musicBtn = document.getElementById("music-btn");
   const rulesBtn = document.getElementById("rules-btn");
   const rulesModal = document.getElementById("rules-modal");
   const rulesCloseBtn = document.getElementById("rules-close-btn");
@@ -100,6 +101,146 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     Sound.toggleMute();
     updateMuteUI();
   });
+
+  // -------------------------------------------------------- background music --
+  // A synthesized loop of the "Sunrise" fanfare that opens Richard Strauss's
+  // "Also sprach Zarathustra" (1896) — the musical composition is public
+  // domain (Strauss died 1949); this is an original oscillator rendition,
+  // not a recording of any performance.
+
+  const Music = (() => {
+    let ctx = null;
+    let enabled = localStorage.getItem("muehle_music") === "1";
+    let playing = false;
+    let timer = null;
+
+    const LOOP_SECONDS = 42;
+    const C1 = 32.7, C2 = 65.41, C3 = 130.81, G3 = 196.0, C4 = 261.63, G4 = 392.0, C5 = 523.25, E4 = 329.63;
+
+    function ensureCtx() {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === "suspended") ctx.resume();
+      return ctx;
+    }
+
+    function tone(freq, start, duration, type, peak) {
+      const c = ensureCtx();
+      const t0 = c.currentTime + start;
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(peak, t0 + 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+      osc.connect(gain).connect(c.destination);
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.05);
+    }
+
+    // Brass-ish stack: fundamental sawtooth plus a square a fifth up (for
+    // bite) and a soft octave-up sine (for shimmer) — thin single oscillators
+    // don't read as "brass fanfare" on their own.
+    function brass(freq, start, duration, peak) {
+      tone(freq, start, duration, "sawtooth", peak);
+      tone(freq, start, duration, "square", peak * 0.3);
+      tone(freq * 2, start, duration * 0.85, "sine", peak * 0.2);
+    }
+
+    // Trombones: an octave below the trumpet line, rounder (no square bite,
+    // softer attack) — the lower brass that joins as the fanfare swells.
+    function trombone(freq, start, duration, peak) {
+      tone(freq / 2, start + 0.03, duration, "sawtooth", peak * 0.7);
+      tone(freq / 2, start + 0.03, duration * 0.8, "triangle", peak * 0.35);
+    }
+
+    function timpaniRoll(start, duration, gap, peak) {
+      for (let t = 0; t < duration; t += gap) {
+        tone(C2, start + t, gap * 0.9, "triangle", peak);
+      }
+    }
+
+    // The three-fold "Sunrise" fanfare — root (C4), fifth above (G4), octave
+    // above the root (C5) — over a sustained pedal C, each statement at the
+    // same broad tempo but louder than the last, answered by a timpani roll,
+    // resolving into the climactic chord.
+    const NOTE_GAP = 2.0;
+    const NOTE_DUR = 2.2;
+
+    function playFanfareOnce() {
+      tone(C1, 0, 40, "sine", 0.05);
+      tone(C2, 0, 40, "sine", 0.07); // pedal drone
+
+      const statements = [
+        { base: 1.5, peak: 0.045, rollPeak: 0.03, rollGap: 0.2, rollDur: 0.9, trombones: false },
+        { base: 13.0, peak: 0.08, rollPeak: 0.06, rollGap: 0.16, rollDur: 1.1, trombones: true },
+        { base: 24.5, peak: 0.13, rollPeak: 0.09, rollGap: 0.12, rollDur: 1.6, trombones: true },
+      ];
+      statements.forEach(({ base, peak, rollPeak, rollGap, rollDur, trombones }) => {
+        brass(C4, base, NOTE_DUR, peak);
+        brass(G4, base + NOTE_GAP, NOTE_DUR, peak);
+        const c5At = base + NOTE_GAP * 2;
+        brass(C5, c5At, NOTE_DUR + 0.5, peak + 0.02);
+        timpaniRoll(c5At, rollDur, rollGap, rollPeak);
+        if (trombones) {
+          trombone(C4, base, NOTE_DUR, peak);
+          trombone(G4, base + NOTE_GAP, NOTE_DUR, peak);
+          trombone(C5, c5At, NOTE_DUR + 0.5, peak + 0.02);
+        }
+      });
+
+      // Climactic chord — full brass, trombones anchoring the bottom.
+      const chordAt = 34.0;
+      [C3, G3, C4, G4, C5, E4].forEach((f) => tone(f, chordAt, 4.2, "sawtooth", 0.09));
+      [C2, C3, G3].forEach((f) => trombone(f * 2, chordAt, 4.0, 0.13));
+      timpaniRoll(chordAt, 2.2, 0.14, 0.09);
+      // A long silence tail before the loop repeats.
+    }
+
+    function scheduleLoop() {
+      if (!playing) return;
+      playFanfareOnce();
+      timer = setTimeout(() => { if (playing) scheduleLoop(); }, LOOP_SECONDS * 1000);
+    }
+
+    function start() {
+      if (playing) return;
+      playing = true;
+      ensureCtx();
+      scheduleLoop();
+    }
+
+    function stop() {
+      playing = false;
+      if (timer) clearTimeout(timer);
+      timer = null;
+    }
+
+    return {
+      toggle() {
+        enabled = !enabled;
+        localStorage.setItem("muehle_music", enabled ? "1" : "0");
+        if (enabled) start(); else stop();
+        return enabled;
+      },
+      isEnabled() { return enabled; },
+      resumeIfEnabled() { if (enabled) start(); },
+    };
+  })();
+
+  document.addEventListener("pointerdown", () => Music.resumeIfEnabled(), { once: true });
+
+  function updateMusicUI() {
+    const on = Music.isEnabled();
+    musicBtn.textContent = on ? "🎵" : "🎵🚫";
+    musicBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  musicBtn.addEventListener("click", () => {
+    Music.toggle();
+    updateMusicUI();
+  });
+  updateMusicUI();
   updateMuteUI();
 
   // ------------------------------------------------------------ rules modal --
@@ -175,6 +316,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   let sceneReady = false;
   let renderer, cssRenderer, scene, cssScene, camera, controls;
   let lineGroup, pointGroup, stoneGroup, boardMesh;
+  let spaceshipGroup = null;
   let worldPoints = [];
   let pointMarkerMeshes = [];
   let pointHitMeshes = [];
@@ -382,6 +524,106 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     return new THREE.Points(geo, mat);
   }
 
+  // A small stylized TOS-era starship (saucer + neck + engineering hull +
+  // twin nacelles) that drifts through the night-sky backdrop. Built from
+  // primitives only — no model asset — so it stays a light background prop.
+  function makeSpaceship() {
+    const group = new THREE.Group();
+
+    const hullMat = new THREE.MeshStandardMaterial({
+      color: 0xe8e4d8,
+      roughness: 0.4,
+      metalness: 0.25,
+      envMapIntensity: 0.9,
+    });
+    const trimMat = new THREE.MeshStandardMaterial({
+      color: 0x8a9a5b,
+      roughness: 0.5,
+      metalness: 0.15,
+    });
+    const darkMat = new THREE.MeshStandardMaterial({
+      color: 0x2c2c30,
+      roughness: 0.5,
+      metalness: 0.3,
+    });
+    const bussardMat = new THREE.MeshStandardMaterial({
+      color: 0xff5a2a,
+      emissive: 0xff3a10,
+      emissiveIntensity: 1.6,
+      roughness: 0.3,
+    });
+    const deflectorMat = new THREE.MeshStandardMaterial({
+      color: 0xffb060,
+      emissive: 0xff8030,
+      emissiveIntensity: 1,
+      roughness: 0.3,
+    });
+
+    // primary hull (saucer section)
+    const saucer = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.05, 0.16, 40), hullMat);
+    group.add(saucer);
+    const saucerTrim = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.03, 8, 40), trimMat);
+    saucerTrim.rotation.x = Math.PI / 2;
+    saucerTrim.position.y = 0.06;
+    group.add(saucerTrim);
+    const bridge = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), hullMat);
+    bridge.position.y = 0.08;
+    group.add(bridge);
+
+    // neck strut down to the engineering hull
+    const neck = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.42, 0.46), hullMat);
+    neck.position.set(0, -0.28, -0.82);
+    neck.rotation.x = 0.55;
+    group.add(neck);
+
+    // secondary (engineering) hull, capsule-shaped
+    const secHull = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.5, 20), hullMat);
+    secHull.rotation.x = Math.PI / 2;
+    secHull.position.set(0, -0.55, -1.75);
+    group.add(secHull);
+    const secFrontCap = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), hullMat);
+    secFrontCap.position.set(0, -0.55, -1.0);
+    group.add(secFrontCap);
+    const secRearCap = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), hullMat);
+    secRearCap.position.set(0, -0.55, -2.5);
+    group.add(secRearCap);
+    const deflector = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), deflectorMat);
+    deflector.position.set(0, -0.55, -0.95);
+    group.add(deflector);
+
+    // twin warp nacelles on pylons
+    [-1, 1].forEach((side) => {
+      const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.95), hullMat);
+      pylon.position.set(side * 0.55, -0.16, -2.0);
+      pylon.rotation.x = -0.25;
+      pylon.rotation.z = side * 0.1;
+      group.add(pylon);
+
+      const nacelle = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.7, 20), hullMat);
+      nacelle.rotation.x = Math.PI / 2;
+      nacelle.position.set(side * 0.72, 0.05, -2.05);
+      group.add(nacelle);
+
+      const nacelleTrim = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.05, 20), darkMat);
+      nacelleTrim.rotation.x = Math.PI / 2;
+      nacelleTrim.position.set(side * 0.72, 0.05, -1.75);
+      group.add(nacelleTrim);
+
+      const bussard = new THREE.Mesh(new THREE.SphereGeometry(0.145, 16, 12), bussardMat);
+      bussard.position.set(side * 0.72, 0.05, -1.2);
+      group.add(bussard);
+    });
+
+    group.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.castShadow = false;
+        obj.receiveShadow = false;
+      }
+    });
+    group.scale.setScalar(1.4);
+    return group;
+  }
+
   function initThree() {
     if (sceneReady) return;
     sceneReady = true;
@@ -420,18 +662,22 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     scene.background = makeSkyTexture();
     scene.add(makeStarField());
 
+    spaceshipGroup = makeSpaceship();
+    scene.add(spaceshipGroup);
+
     cssRenderer = new CSS3DRenderer();
     cssRenderer.domElement.classList.add("css3d-layer");
     boardEl.appendChild(cssRenderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
+    window.__debug = { camera, controls, spaceshipGroup };
     controls.target.set(0, 0.4, -1.1);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.minDistance = 6;
-    controls.maxDistance = 17;
+    controls.minDistance = 3.5;
+    controls.maxDistance = 28;
     controls.minPolarAngle = 0.25;
-    controls.maxPolarAngle = Math.PI / 2 - 0.04;
+    controls.maxPolarAngle = Math.PI - 0.25;
     controls.enablePan = false;
 
     scene.add(new THREE.AmbientLight(0xfff6e4, 0.75));
@@ -562,6 +808,24 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       const targetY = entry.baseY + (mesh.userData.selected ? 0.12 : 0);
       mesh.position.y += (targetY - mesh.position.y) * 0.2;
     });
+
+    if (spaceshipGroup) {
+      // The camera sits high and always looks down toward the board, so
+      // the only part of the sky actually inside its view cone is a low
+      // band just above table height, well behind the board — not high
+      // overhead. Cruise the ship back and forth through that band.
+      const t = now * 0.00015;
+      const cx = 0, cz = -11, radiusX = 10, radiusZ = 2, baseY = 0.7, bobAmp = 0.25;
+      const pos = (a) => new THREE.Vector3(
+        cx + radiusX * Math.sin(a),
+        baseY + Math.sin(a * 0.5) * bobAmp,
+        cz + radiusZ * Math.cos(a),
+      );
+      const here = pos(t);
+      const ahead = pos(t + 0.01);
+      spaceshipGroup.position.copy(here);
+      spaceshipGroup.lookAt(ahead);
+    }
 
     renderer.render(scene, camera);
     cssRenderer.render(cssScene, camera);

@@ -352,7 +352,7 @@ def _detect_lan_ip():
 
 
 if __name__ == "__main__":
-    port = 5002
+    port = 5003
     lan_ip = _detect_lan_ip()
     print(f"Mühle läuft auf: http://localhost:{port}/")
     if lan_ip:
