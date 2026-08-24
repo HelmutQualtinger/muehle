@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mühle (Nine Men's Morris): a Flask backend serving a vanilla HTML/CSS/JS frontend. The board is rendered as a 3D scene (Three.js, WebGL) and driven entirely through a small JSON API — there is no client-side game logic beyond rendering and input handling; all rules are enforced server-side.
 
+![Mühle-Spielbrett](docs/screenshot.jpg)
+
 ## Commands
 
 Dependency management and running is via `uv` (see `pyproject.toml` / `uv.lock`).
