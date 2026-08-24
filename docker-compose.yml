@@ -5,7 +5,7 @@ services:
     container_name: muehle
     restart: unless-stopped
     ports:
-      - "5001:5002"
+      - "5052:5003"
     networks:
       - reverse-proxy
 

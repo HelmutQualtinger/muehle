@@ -160,12 +160,15 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       }
     }
 
-    // The three-fold "Sunrise" fanfare — root (C4), fifth above (G4), octave
-    // above the root (C5) — over a sustained pedal C, each statement at the
-    // same broad tempo but louder than the last, answered by a timpani roll,
-    // resolving into the climactic chord.
+    // The three-fold "Sunrise" fanfare — root (C4), fifth above (G4), then
+    // the octave above the root (C5) struck twice, short and punchy ("Daa —
+    // Daa — da-da") rather than held — over a sustained pedal C, each
+    // statement louder than the last, answered by a timpani roll, resolving
+    // into the climactic chord.
     const NOTE_GAP = 2.0;
     const NOTE_DUR = 2.2;
+    const OCTAVE_HIT_DUR = 0.45;
+    const OCTAVE_HIT_GAP = 0.55;
 
     function playFanfareOnce() {
       tone(C1, 0, 40, "sine", 0.05);
@@ -180,12 +183,14 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
         brass(C4, base, NOTE_DUR, peak);
         brass(G4, base + NOTE_GAP, NOTE_DUR, peak);
         const c5At = base + NOTE_GAP * 2;
-        brass(C5, c5At, NOTE_DUR + 0.5, peak + 0.02);
-        timpaniRoll(c5At, rollDur, rollGap, rollPeak);
+        brass(C5, c5At, OCTAVE_HIT_DUR, peak + 0.02);
+        brass(C5, c5At + OCTAVE_HIT_GAP, OCTAVE_HIT_DUR, peak + 0.03);
+        timpaniRoll(c5At + OCTAVE_HIT_GAP, rollDur, rollGap, rollPeak);
         if (trombones) {
           trombone(C4, base, NOTE_DUR, peak);
           trombone(G4, base + NOTE_GAP, NOTE_DUR, peak);
-          trombone(C5, c5At, NOTE_DUR + 0.5, peak + 0.02);
+          trombone(C5, c5At, OCTAVE_HIT_DUR, peak + 0.02);
+          trombone(C5, c5At + OCTAVE_HIT_GAP, OCTAVE_HIT_DUR, peak + 0.03);
         }
       });
 
@@ -309,9 +314,18 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const MILL_GLOW = 0xff6a4d;
   const CSS3D_SCALE = 0.01; // 1 CSS px == 0.01 world units
 
+  // Ground-level glow halo shown under a stone: red for "you may capture
+  // this", green for "the opponent just placed/moved this one".
+  const AURA_INNER = STONE_RADIUS + 0.05;
+  const AURA_OUTER = STONE_RADIUS + 0.26;
+  const AURA_Y = MARKER_HEIGHT + 0.004;
+  const AURA_RED = 0xff3b30;
+  const AURA_GREEN = 0x3ee27a;
+
   const stoneGeometry = new THREE.CylinderGeometry(STONE_RADIUS - 0.02, STONE_RADIUS, STONE_HEIGHT, 40);
   const pointMarkerGeometry = new THREE.CylinderGeometry(0.13, 0.15, MARKER_HEIGHT, 24);
   const pointHitGeometry = new THREE.CylinderGeometry(0.42, 0.42, 0.5, 16);
+  const auraGeometry = new THREE.RingGeometry(AURA_INNER, AURA_OUTER, 48);
 
   let sceneReady = false;
   let renderer, cssRenderer, scene, cssScene, camera, controls;
@@ -320,13 +334,16 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   let worldPoints = [];
   let pointMarkerMeshes = [];
   let pointHitMeshes = [];
+  let auraMeshes = [];
   let lineMeshByKey = new Map();
   let stoneEls = new Array(24).fill(null); // { mesh, baseY }
   let popTweens = [];
   let millTweens = [];
   let raycaster = new THREE.Raycaster();
   let pointerDownAt = null;
-  let woodColorTex, woodBumpTex, metalRoughTex, stoneNoiseTex;
+  let marbleColorTex, marbleBumpTex, metalRoughTex, stoneNoiseTex, stoneCapTex, stoneCapNormalTex, boardUndersideTex;
+  let lastSetPoint = null;
+  let lastSetOwner = null;
 
   function edgeKey(a, b) {
     return a < b ? `${a}_${b}` : `${b}_${a}`;
@@ -349,62 +366,125 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     return c;
   }
 
-  function drawGrainStrokes(ctx, size, strokeFn) {
-    for (let i = 0; i < 260; i++) {
-      const y = Math.random() * size;
+  // Wandering, branching vein strokes (unlike wood grain's parallel lines,
+  // marble veins meander at all angles and fork) shared by the color and
+  // bump variants so the two stay registered with each other. An optional
+  // glow ({color, blur}) softens each stroke into a blurred, luminous line
+  // instead of a crisp one — canvas shadowBlur is a real blur filter, so it
+  // both softens the vein's edge and gives it a halo in one pass.
+  function drawMarbleVeins(ctx, size, strokeFn, glow) {
+    if (glow) {
+      ctx.shadowColor = glow.color;
+      ctx.shadowBlur = glow.blur;
+    }
+    for (let i = 0; i < 22; i++) {
+      let x = Math.random() * size;
+      let y = Math.random() * size;
+      let angle = Math.random() * Math.PI * 2;
+      const segments = 40 + Math.floor(Math.random() * 70);
       ctx.strokeStyle = strokeFn();
-      ctx.lineWidth = 0.5 + Math.random() * 1.7;
+      ctx.lineWidth = 0.6 + Math.random() * 1.8;
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      let py = y;
-      for (let x = 8; x <= size; x += 16) {
-        py += (Math.random() - 0.5) * 5;
-        ctx.lineTo(x, py);
+      ctx.moveTo(x, y);
+      for (let s = 0; s < segments; s++) {
+        angle += (Math.random() - 0.5) * 0.9;
+        x += Math.cos(angle) * 6;
+        y += Math.sin(angle) * 6;
+        ctx.lineTo(x, y);
+        if (Math.random() < 0.04 && s < segments - 8) {
+          // occasional fork, a short branch off the main vein
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+        }
       }
       ctx.stroke();
     }
+    if (glow) ctx.shadowBlur = 0;
   }
 
-  function makeWoodColorTexture() {
-    const size = 512;
-    const canvas = makeCanvas(size);
-    const ctx = canvas.getContext("2d");
-    const grad = ctx.createLinearGradient(0, 0, size, 0);
-    grad.addColorStop(0, "#7a5530");
-    grad.addColorStop(0.5, "#a67c47");
-    grad.addColorStop(1, "#8a6238");
+  // Shared green-marble base (gradient + cloudy blotches + glowing veins),
+  // used for both the board's visible top and its hidden underside so they
+  // read as the same stone.
+  function paintMarbleBase(ctx, size) {
+    const grad = ctx.createLinearGradient(0, 0, size, size);
+    grad.addColorStop(0, "#173d30");
+    grad.addColorStop(0.5, "#215945");
+    grad.addColorStop(1, "#1a4536");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, size, size);
-    drawGrainStrokes(ctx, size, () =>
-      Math.random() > 0.45
-        ? `rgba(58, 38, 18, ${0.05 + Math.random() * 0.1})`
-        : `rgba(180, 140, 90, ${0.04 + Math.random() * 0.08})`
-    );
-    for (let i = 0; i < 4; i++) {
-      const cx = Math.random() * size, cy = Math.random() * size, r = 6 + Math.random() * 16;
+    // soft cloudy blotches beneath the veining, typical of natural stone —
+    // a mix of lighter and darker green patches for depth
+    for (let i = 0; i < 10; i++) {
+      const cx = Math.random() * size, cy = Math.random() * size, r = size * (0.08 + Math.random() * 0.21);
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      g.addColorStop(0, "rgba(35, 22, 10, 0.45)");
-      g.addColorStop(1, "rgba(35, 22, 10, 0)");
+      const light = Math.random() > 0.5;
+      g.addColorStop(0, light ? "rgba(120, 165, 140, 0.14)" : "rgba(10, 30, 22, 0.16)");
+      g.addColorStop(1, light ? "rgba(120, 165, 140, 0)" : "rgba(10, 30, 22, 0)");
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
     }
+    // Verde-marble veining: pale cream veins with occasional near-black
+    // ones, softened and glowing rather than crisp hairlines.
+    drawMarbleVeins(
+      ctx,
+      size,
+      () =>
+        Math.random() > 0.3
+          ? `rgba(226, 228, 210, ${0.14 + Math.random() * 0.24})`
+          : `rgba(12, 24, 18, ${0.15 + Math.random() * 0.2})`,
+      { color: "rgba(206, 244, 200, 0.65)", blur: size * 0.016 }
+    );
+  }
+
+  function makeMarbleColorTexture() {
+    const size = 512;
+    const canvas = makeCanvas(size);
+    const ctx = canvas.getContext("2d");
+    paintMarbleBase(ctx, size);
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }
 
-  function makeGrainBumpTexture() {
+  function makeMarbleBumpTexture() {
     const size = 512;
     const canvas = makeCanvas(size);
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#808080";
     ctx.fillRect(0, 0, size, size);
-    drawGrainStrokes(ctx, size, () =>
-      Math.random() > 0.5 ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.08)"
-    );
+    // Polished marble is otherwise flat, so keep the veins as the only
+    // relief — a shallow groove along each vein, not a raised ridge.
+    drawMarbleVeins(ctx, size, () => "rgba(0,0,0,0.1)");
     const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }
+
+  // A hidden note on the underside of the board — the -y face never faces
+  // the camera in normal play (the camera stays high, looking down), so
+  // this is a little easter egg for anyone who flips the board around.
+  function makeBoardUndersideTexture() {
+    const size = 1024;
+    const canvas = makeCanvas(size);
+    const ctx = canvas.getContext("2d");
+    paintMarbleBase(ctx, size);
+    // A dark scrim behind the text keeps it legible over the marble's
+    // glowing veins without hiding them entirely.
+    ctx.fillStyle = "rgba(10, 20, 16, 0.45)";
+    ctx.fillRect(0, size / 2 - 150, size, 300);
+    ctx.fillStyle = "#f3e6c2";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "bold 92px Georgia, serif";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+    ctx.shadowBlur = 12;
+    ctx.fillText("Weiter gehen,", size / 2, size / 2 - 60);
+    ctx.fillText("nicht zu sehen !", size / 2, size / 2 + 60);
+    ctx.shadowBlur = 0;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }
 
@@ -420,6 +500,89 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     ctx.putImageData(img, 0, 0);
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  // Fewer, wider bands than a fine sine read reliably even when the stone
+  // occupies only a small part of the screen (a fine pattern gets
+  // mip-blurred to flat gray at a distance; thick bands survive). Height is
+  // in [-1, 1]; the tanh sharpens a soft sine into near-flat ridges/grooves
+  // with a narrow transition, reading as much deeper grooves once amplified.
+  const STONE_RING_COUNT = 4;
+  function stoneRingHeight(rFrac) {
+    const r = Math.min(1, rFrac);
+    return Math.tanh(Math.sin(r * STONE_RING_COUNT * Math.PI * 2) * 3.2);
+  }
+
+  // Concentric turned-groove rings like a draughts/checkers piece, radiating
+  // out from the texture's center. CylinderGeometry maps a cap's UVs to a
+  // circle inscribed in the square texture (center 0.5,0.5, radius 0.5), so
+  // this lines up as true rings when used on the stone's top/bottom caps.
+  // Used as a roughnessMap (grayscale height, not physically a normal).
+  function makeStoneCapTexture(size) {
+    const canvas = makeCanvas(size);
+    const ctx = canvas.getContext("2d");
+    const img = ctx.createImageData(size, size);
+    const cx = size / 2;
+    const cy = size / 2;
+    const maxR = size * 0.5;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        const ring = stoneRingHeight(Math.sqrt(dx * dx + dy * dy) / maxR) * 120;
+        const speckle = (Math.random() - 0.5) * 12;
+        const v = 128 + ring + speckle;
+        const idx = (y * size + x) * 4;
+        img.data[idx] = img.data[idx + 1] = img.data[idx + 2] = v;
+        img.data[idx + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }
+
+  // A proper tangent-space normal map (not a bump/height map) derived from
+  // the same ring height field via finite differences. Normal maps drive
+  // lighting far more strongly and reliably than bumpMap's on-the-fly
+  // derivative, and are what MeshPhysicalMaterial.clearcoatNormalMap
+  // requires — without this the glossy clearcoat sits smooth on top and
+  // visually flattens the grooves, especially on the lighter stones.
+  function makeStoneCapNormalTexture(size) {
+    const cx = size / 2;
+    const cy = size / 2;
+    const maxR = size * 0.5;
+    const height = new Float32Array(size * size);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        height[y * size + x] = stoneRingHeight(Math.sqrt(dx * dx + dy * dy) / maxR);
+      }
+    }
+    const canvas = makeCanvas(size);
+    const ctx = canvas.getContext("2d");
+    const img = ctx.createImageData(size, size);
+    const strength = 6;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const x1 = Math.min(size - 1, x + 1);
+        const y1 = Math.min(size - 1, y + 1);
+        const hc = height[y * size + x];
+        const nx = -(height[y * size + x1] - hc) * strength;
+        const ny = -(height[y1 * size + x] - hc) * strength;
+        const nz = 1;
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        const idx = (y * size + x) * 4;
+        img.data[idx] = (nx / len) * 0.5 * 255 + 127.5;
+        img.data[idx + 1] = (ny / len) * 0.5 * 255 + 127.5;
+        img.data[idx + 2] = (nz / len) * 0.5 * 255 + 127.5;
+        img.data[idx + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(canvas);
     return tex;
   }
 
@@ -649,12 +812,22 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
 
-    woodColorTex = makeWoodColorTexture();
-    woodBumpTex = makeGrainBumpTexture();
+    marbleColorTex = makeMarbleColorTexture();
+    marbleBumpTex = makeMarbleBumpTexture();
+    boardUndersideTex = makeBoardUndersideTexture();
     metalRoughTex = makeSpeckleTexture(256);
     stoneNoiseTex = makeSpeckleTexture(256);
+    stoneCapTex = makeStoneCapTexture(256);
+    stoneCapNormalTex = makeStoneCapNormalTexture(256);
+    // Mipmapping would blur the rings to flat gray once a stone is more
+    // than a couple hundred pixels away from the camera — keep full detail
+    // at any distance instead.
+    stoneCapTex.generateMipmaps = false;
+    stoneCapTex.minFilter = THREE.LinearFilter;
+    stoneCapNormalTex.generateMipmaps = false;
+    stoneCapNormalTex.minFilter = THREE.LinearFilter;
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
-    [woodColorTex, woodBumpTex, metalRoughTex, stoneNoiseTex].forEach((t) => { t.anisotropy = maxAniso; });
+    [marbleColorTex, marbleBumpTex, metalRoughTex, stoneNoiseTex, stoneCapTex, stoneCapNormalTex].forEach((t) => { t.anisotropy = maxAniso; });
 
     // Night-sky backdrop: a starfield + soft galaxy blobs painted on a
     // canvas and mapped as a proper rotating skybox (not a flat CSS image),
@@ -697,16 +870,25 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     scene.add(fill);
 
     const boardGeo = new THREE.BoxGeometry(8.4, 0.5, 8.4);
-    const boardMat = new THREE.MeshStandardMaterial({
-      map: woodColorTex,
-      bumpMap: woodBumpTex,
-      bumpScale: 0.035,
-      roughness: 0.85,
+    const boardMat = new THREE.MeshPhysicalMaterial({
+      map: marbleColorTex,
+      bumpMap: marbleBumpTex,
+      bumpScale: 0.008,
+      roughness: 0.32,
       roughnessMap: metalRoughTex,
-      metalness: 0.04,
-      envMapIntensity: 0.6,
+      metalness: 0.02,
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.25,
+      envMapIntensity: 0.9,
     });
-    boardMesh = new THREE.Mesh(boardGeo, boardMat);
+    const boardBottomMat = new THREE.MeshStandardMaterial({
+      map: boardUndersideTex,
+      roughness: 0.7,
+      metalness: 0,
+    });
+    // BoxGeometry face/material-group order is [+x, -x, +y, -y, +z, -z] —
+    // slot 3 is the underside, the one face the camera never sees.
+    boardMesh = new THREE.Mesh(boardGeo, [boardMat, boardMat, boardMat, boardBottomMat, boardMat, boardMat]);
     boardMesh.position.y = -0.25;
     boardMesh.receiveShadow = true;
     scene.add(boardMesh);
@@ -793,17 +975,22 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       }
     });
 
+    auraMeshes.forEach((aura) => {
+      if (!aura || !aura.visible) return;
+      aura.material.opacity = 0.35 + 0.4 * pulse;
+      const scale = 1 + 0.06 * pulse;
+      aura.scale.set(scale, scale, 1);
+    });
+
     stoneEls.forEach((entry) => {
       if (!entry) return;
       const { mesh } = entry;
       if (mesh.userData.removable) {
-        mesh.material.emissive.setHex(MILL_GLOW);
-        mesh.material.emissiveIntensity = 0.15 + 0.45 * pulse;
+        setStoneEmissive(mesh, MILL_GLOW, 0.15 + 0.45 * pulse);
       } else if (mesh.userData.selected) {
-        mesh.material.emissive.setHex(BRASS);
-        mesh.material.emissiveIntensity = 0.3 + 0.3 * pulse;
+        setStoneEmissive(mesh, BRASS, 0.3 + 0.3 * pulse);
       } else {
-        mesh.material.emissiveIntensity = 0;
+        mesh.material.forEach((m) => { m.emissiveIntensity = 0; });
       }
       const targetY = entry.baseY + (mesh.userData.selected ? 0.12 : 0);
       mesh.position.y += (targetY - mesh.position.y) * 0.2;
@@ -844,7 +1031,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     stoneEls.forEach((entry) => {
       if (!entry) return;
       stoneGroup.remove(entry.mesh);
-      entry.mesh.material.dispose();
+      disposeMaterial(entry.mesh.material);
     });
     stoneEls = new Array(24).fill(null);
   }
@@ -871,22 +1058,54 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
   function makeStoneMesh(owner) {
     const isWhite = owner === "white";
-    const mat = new THREE.MeshPhysicalMaterial({
+    const base = {
       color: isWhite ? 0xe9d6a8 : 0x211c16,
       roughness: isWhite ? 0.4 : 0.35,
-      roughnessMap: stoneNoiseTex,
-      bumpMap: stoneNoiseTex,
-      bumpScale: 0.004,
       metalness: isWhite ? 0.06 : 0.1,
       clearcoat: 0.6,
       clearcoatRoughness: 0.22,
       envMapIntensity: 1,
       emissive: 0x000000,
+    };
+    // Side (torso) keeps the plain speckled finish; top/bottom caps get the
+    // concentric turned-groove rings of a draughts/checkers piece.
+    const sideMat = new THREE.MeshPhysicalMaterial({
+      ...base,
+      roughnessMap: stoneNoiseTex,
+      bumpMap: stoneNoiseTex,
+      bumpScale: 0.004,
     });
-    const mesh = new THREE.Mesh(stoneGeometry, mat);
+    const capMat = new THREE.MeshPhysicalMaterial({
+      ...base,
+      roughnessMap: stoneCapTex,
+      normalMap: stoneCapNormalTex,
+      normalScale: new THREE.Vector2(1.8, 1.8),
+      // Perturb the glossy clearcoat layer too, not just the base coat —
+      // otherwise the smooth clearcoat sits on top and visually flattens
+      // the grooves, especially on the lighter (white) stones.
+      clearcoatNormalMap: stoneCapNormalTex,
+      clearcoatNormalScale: new THREE.Vector2(1.4, 1.4),
+    });
+    const mesh = new THREE.Mesh(stoneGeometry, [sideMat, capMat, capMat]);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return mesh;
+  }
+
+  function setStoneEmissive(mesh, hex, intensity) {
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((m) => {
+      m.emissive.setHex(hex);
+      m.emissiveIntensity = intensity;
+    });
+  }
+
+  function disposeMaterial(material) {
+    if (Array.isArray(material)) {
+      material.forEach((m) => m.dispose());
+    } else {
+      material.dispose();
+    }
   }
 
   function buildBoardSkeleton(points, edges) {
@@ -897,7 +1116,10 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     lineMeshByKey.clear();
     pointMarkerMeshes = [];
     pointHitMeshes = [];
+    auraMeshes = [];
     selectedPoint = null;
+    lastSetPoint = null;
+    lastSetOwner = null;
 
     worldPoints = points.map(([x, y]) => new THREE.Vector3(x - 3, 0, y - 3));
 
@@ -913,13 +1135,13 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       const marker = new THREE.Mesh(
         pointMarkerGeometry,
         new THREE.MeshStandardMaterial({
-          color: 0x6b4a2a,
-          bumpMap: woodBumpTex,
-          bumpScale: 0.015,
-          roughness: 0.85,
+          color: 0x2e5445,
+          bumpMap: marbleBumpTex,
+          bumpScale: 0.012,
+          roughness: 0.4,
           roughnessMap: metalRoughTex,
-          metalness: 0.12,
-          envMapIntensity: 0.5,
+          metalness: 0.04,
+          envMapIntensity: 0.7,
           emissive: 0x000000,
         })
       );
@@ -936,6 +1158,23 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       hit.userData.point = i;
       pointGroup.add(hit);
       pointHitMeshes[i] = hit;
+
+      const aura = new THREE.Mesh(
+        auraGeometry,
+        new THREE.MeshBasicMaterial({
+          color: AURA_RED,
+          transparent: true,
+          opacity: 0,
+          side: THREE.DoubleSide,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      );
+      aura.rotation.x = -Math.PI / 2;
+      aura.position.set(pos.x, AURA_Y, pos.z);
+      aura.visible = false;
+      pointGroup.add(aura);
+      auraMeshes[i] = aura;
     });
   }
 
@@ -1062,7 +1301,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       if (owner === null) {
         if (existing) {
           stoneGroup.remove(existing.mesh);
-          existing.mesh.material.dispose();
+          disposeMaterial(existing.mesh.material);
           stoneEls[i] = null;
         }
         return;
@@ -1086,6 +1325,24 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
       entry.mesh.userData.removable = !busy && !!state.pendingRemoval && owner !== state.turn && isRemovable(i);
       entry.mesh.userData.selected = selectedPoint === i;
+    });
+
+    auraMeshes.forEach((aura, i) => {
+      if (!aura) return;
+      const entry = stoneEls[i];
+      if (!entry) {
+        aura.visible = false;
+        return;
+      }
+      if (entry.mesh.userData.removable) {
+        aura.visible = true;
+        aura.material.color.setHex(AURA_RED);
+      } else if (i === lastSetPoint && lastSetOwner !== null && entry.mesh.userData.owner !== state.turn) {
+        aura.visible = true;
+        aura.material.color.setHex(AURA_GREEN);
+      } else {
+        aura.visible = false;
+      }
     });
   }
 
@@ -1119,12 +1376,16 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       live.turn = ev.player;
       live.pendingRemoval = false;
       live.message = `${label} setzt einen Stein.`;
+      lastSetPoint = ev.point;
+      lastSetOwner = ev.player;
     } else if (ev.type === "move") {
       live.board[ev.from] = null;
       live.board[ev.to] = ev.player;
       live.turn = ev.player;
       live.pendingRemoval = false;
       live.message = `${label} zieht.`;
+      lastSetPoint = ev.to;
+      lastSetOwner = ev.player;
     } else if (ev.type === "mill") {
       live.pendingRemoval = true;
       live.turn = ev.player;
@@ -1135,6 +1396,10 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       live.stonesOnBoard[opponent] = Math.max(0, live.stonesOnBoard[opponent] - 1);
       live.pendingRemoval = false;
       live.message = `${label} entfernt einen Stein.`;
+      if (ev.point === lastSetPoint) {
+        lastSetPoint = null;
+        lastSetOwner = null;
+      }
     } else if (ev.type === "reset") {
       live.board = new Array(24).fill(null);
       live.phase = "placing";
@@ -1144,6 +1409,8 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       live.pendingRemoval = false;
       live.winner = null;
       live.message = "Neues Spiel gestartet.";
+      lastSetPoint = null;
+      lastSetOwner = null;
     }
   }
 

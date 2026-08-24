@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 import socket
 
@@ -12,6 +13,24 @@ app.secret_key = secrets.token_hex(32)
 # Trust the reverse proxy's X-Forwarded-Proto/Host so request.url / url_for(_external=True)
 # report https:// (the proxy terminates TLS; the container only ever sees plain HTTP).
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# The reverse proxy sets a long Cache-Control on /static/*, so a stale
+# game.js/style.css can outlive a redeploy in a visitor's browser. Hash each
+# file's contents once at process start and append it as a query string in
+# the template, so every deploy that actually changes a file's bytes forces
+# a fresh fetch.
+_ASSET_VERSIONS = {}
+
+
+def _asset_version(filename):
+    if filename not in _ASSET_VERSIONS:
+        path = app.static_folder + "/" + filename
+        with open(path, "rb") as f:
+            _ASSET_VERSIONS[filename] = hashlib.md5(f.read()).hexdigest()[:8]
+    return _ASSET_VERSIONS[filename]
+
+
+app.jinja_env.globals["asset_version"] = _asset_version
 
 DEFAULT_META = {"opponent": "human", "human_color": "white"}
 

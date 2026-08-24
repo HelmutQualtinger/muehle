@@ -28,13 +28,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=UnifrakturMaguntia&family=Vollkorn:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
   <script>window.MUEHLE_GAME_ID = {{ game_id|tojson }};</script>
   <script type="importmap">
     {
       "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        "three": "https://unpkg.com/three@0.171.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.171.0/examples/jsm/"
       }
     }
   </script>
@@ -81,6 +81,7 @@
         <button id="rules-btn" class="icon-btn" type="button" aria-label="Spielregeln anzeigen" aria-haspopup="dialog">📜</button>
         <button id="mute-btn" class="icon-btn" type="button" aria-pressed="false" aria-label="Ton stumm schalten">🔊</button>
         <button id="music-btn" class="icon-btn" type="button" aria-pressed="false" aria-label="Hintergrundmusik ein-/ausschalten">🎵</button>
+        <a id="github-link" class="icon-btn" href="https://github.com/HelmutQualtinger/muehle" target="_blank" rel="noopener noreferrer" aria-label="Quellcode auf GitHub ansehen">🐙</a>
         {% if not game_id %}
         <button id="net-create-btn" class="btn btn--ghost" type="button">🌐 Online spielen</button>
         {% endif %}
@@ -125,6 +126,6 @@
     </div>
   </main>
 
-  <script type="module" src="{{ url_for('static', filename='js/game.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='js/game.js') }}?v={{ asset_version('js/game.js') }}"></script>
 </body>
 </html>
