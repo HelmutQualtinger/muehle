@@ -10,9 +10,11 @@ Nine Men's Morris (Mühle), spielbar im Browser. Ein Flask-Backend liefert die S
 - **Gegen Computer** — ein Minimax-Gegner (Alpha-Beta-Suche); Weiss oder Schwarz wählbar.
 - **Online** — einen Mitspieler per Link einladen (`/g/<game_id>?t=<token>`), per E-Mail versendet oder manuell kopiert. Züge werden automatisch zwischen den Browsern synchronisiert.
 - Vollständiges Regelwerk: Setzphase, Zugphase, Fliegen (bei nur noch 3 Steinen), Mühlenbildung und -schlagen (inklusive Schutzregel), Erkennung von Patt/Sieg.
-- Synthetische Soundeffekte (Web Audio API, keine Audiodateien) und Mühlen-Blitzanimationen.
+- Synthetische Soundeffekte (Web Audio API, keine Audiodateien) sowie ein umschaltbarer Hintergrundmusik-Loop; Mühlen-Blitzanimationen und leuchtende Auren für geschlagene sowie zuletzt gezogene Steine.
 - Frei drehbares, bildschirmfüllendes 3D-Brett (Kamera per Orbit/Zoom) mit fotorealistischen Materialien vor einem sternenklaren Nachthimmel; Einstellungen, Status und Spielerpanels schweben als Teil der Szene mit.
 - Regelwerk zum Nachschlagen: ein Button (📜) öffnet eine pergamentartige Übersicht aller Spielregeln.
+- Zwei kleine Easter Eggs: ein vorbeifliegendes Raumschiff und, wer das Brett von der Rückseite betrachtet, eine weitere Überraschung.
+- Open-Graph-/Twitter-Vorschaubilder für geteilte Links.
 
 ## Starten
 
