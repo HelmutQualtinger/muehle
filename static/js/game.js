@@ -670,10 +670,10 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     boardEl.appendChild(cssRenderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
-    window.__debug = { camera, controls, spaceshipGroup };
     controls.target.set(0, 0.4, -1.1);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+    controls.zoomSpeed = 0.8;
     controls.minDistance = 3.5;
     controls.maxDistance = 28;
     controls.minPolarAngle = 0.25;
