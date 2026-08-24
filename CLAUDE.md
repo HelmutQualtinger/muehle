@@ -13,19 +13,23 @@ Mühle (Nine Men's Morris): a Flask backend serving a vanilla HTML/CSS/JS fronte
 Dependency management and running is via `uv` (see `pyproject.toml` / `uv.lock`).
 
 ```bash
-uv run python app.py        # start the dev server on http://localhost:5001/
+uv run python app.py        # start the dev server on http://localhost:5003/
 uv add <package>             # add a dependency
 ```
 
-A multi-stage Alpine `Dockerfile` (builder stage resolves deps with `uv`, runtime stage is bare `python:3.12-alpine` running as a non-root `app` user) and `docker-compose.yml` are also provided for containerized deployment:
+A multi-stage Alpine `Dockerfile` (builder stage resolves deps with `uv`, runtime stage is bare `python:3.12-alpine` running as a non-root `app` user, `EXPOSE 5003`) and `docker-compose.yml` are also provided for containerized deployment:
 
 ```bash
-docker compose up --build    # build and run on http://localhost:5001/
+docker compose up --build    # build and run, published on http://localhost:5052/ (mapped to container port 5003)
 ```
+
+The runtime stage's `CMD` runs `gunicorn --workers 1 --threads 4 --bind 0.0.0.0:5003 app:app` — deliberately a single worker process, since `NET_GAMES` and the per-process `app.secret_key` (regenerated at import time, see below) live in memory and would fragment across workers. `docker-compose.yml` also attaches the container to an external Docker network named `reverse-proxy` (`docker network create reverse-proxy` once, if it doesn't already exist) — `app.py` wraps the WSGI app in `ProxyFix(x_proto=1, x_host=1)` so `request.url`/`url_for(_external=True)` report `https://` from a proxy's `X-Forwarded-Proto`/`X-Forwarded-Host` headers rather than the plain-HTTP scheme the container actually sees.
 
 There is no test suite, linter, or build step configured. Ad-hoc verification during development is typically done by importing `game.py`/`ai.py` directly in a `uv run python -c "..."` one-liner, or by driving `app.py`'s Flask routes through `app.test_client()`.
 
 The server prints its LAN URL on startup (for same-network multiplayer testing) and binds to `0.0.0.0`. `debug=False` is intentional — the Werkzeug interactive debugger is a remote-code-execution risk once the server is reachable from other machines on the network, so do not re-enable `debug=True` without also restricting the bind address back to loopback-only.
+
+Note `app.secret_key = secrets.token_hex(32)` at import time (`app.py`) is regenerated on every process restart, not read from an env var — this invalidates all Flask session cookies (local hotseat/vs-computer game state) across a redeploy, but doesn't touch `NET_GAMES` (network-play state is keyed by the game's own tokens, not the session).
 
 ## Architecture
 
