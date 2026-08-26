@@ -464,27 +464,75 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
   // A hidden note on the underside of the board — the -y face never faces
   // the camera in normal play (the camera stays high, looking down), so
-  // this is a little easter egg for anyone who flips the board around.
+  // this is a little easter egg for anyone who flips the board around: the
+  // full rule set, engraved in the same blackletter face as the rules
+  // modal's parchment (.parchment__rules in style.css).
+  const UNDERSIDE_RULES = [
+    ["Setzphase.", "Jede Seite setzt 9 Steine, abwechselnd."],
+    ["Mühle.", "Drei in einer Reihe schlägt einen Stein."],
+    ["Schutz.", "Steine in einer Mühle sind sicher."],
+    ["Zugphase.", "Danach zieht man auf freie Nachbarn."],
+    ["Fliegen.", "Bei 3 Steinen darf man springen."],
+    ["Sieg.", "Wer nur noch 2 Steine hat, verliert."],
+  ];
+  const UNDERSIDE_FONT = 'UnifrakturMaguntia, Cinzel, Georgia, serif';
+
+  function paintBoardUndersideTexture(ctx, size) {
+    paintMarbleBase(ctx, size);
+    const lineHeight = 72;
+    const titleHeight = 120;
+    const blockHeight = titleHeight + UNDERSIDE_RULES.length * lineHeight + 60;
+    const top = size / 2 - blockHeight / 2;
+    // A dark scrim behind the text keeps it legible over the marble's
+    // glowing veins without hiding them entirely.
+    ctx.fillStyle = "rgba(10, 20, 16, 0.5)";
+    ctx.fillRect(size * 0.06, top, size * 0.88, blockHeight);
+
+    ctx.textBaseline = "alphabetic";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+    ctx.shadowBlur = 10;
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f3e6c2";
+    ctx.font = `56px ${UNDERSIDE_FONT}`;
+    ctx.fillText("Die Regeln", size / 2, top + 78);
+
+    ctx.textAlign = "left";
+    ctx.font = `32px ${UNDERSIDE_FONT}`;
+    const textLeft = size * 0.09;
+    let y = top + titleHeight + 44;
+    UNDERSIDE_RULES.forEach(([label, body]) => {
+      ctx.fillStyle = "#e8c98a";
+      ctx.fillText(label, textLeft, y);
+      const labelWidth = ctx.measureText(label + " ").width;
+      ctx.fillStyle = "#f3e6c2";
+      ctx.fillText(body, textLeft + labelWidth, y);
+      y += lineHeight;
+    });
+    ctx.shadowBlur = 0;
+  }
+
   function makeBoardUndersideTexture() {
     const size = 1024;
     const canvas = makeCanvas(size);
     const ctx = canvas.getContext("2d");
-    paintMarbleBase(ctx, size);
-    // A dark scrim behind the text keeps it legible over the marble's
-    // glowing veins without hiding them entirely.
-    ctx.fillStyle = "rgba(10, 20, 16, 0.45)";
-    ctx.fillRect(0, size / 2 - 150, size, 300);
-    ctx.fillStyle = "#f3e6c2";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "bold 92px Georgia, serif";
-    ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
-    ctx.shadowBlur = 12;
-    ctx.fillText("Weiter gehen,", size / 2, size / 2 - 60);
-    ctx.fillText("nicht zu sehen !", size / 2, size / 2 + 60);
-    ctx.shadowBlur = 0;
+    paintBoardUndersideTexture(ctx, size);
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    // UnifrakturMaguntia is a webfont loaded via Google Fonts; if it hasn't
+    // finished downloading yet, the paint above silently falls back to the
+    // generic serif. Repaint once it's actually ready so the underside
+    // always reads in gothic script, not just after a cache-warm reload.
+    if (document.fonts && document.fonts.load) {
+      document.fonts
+        .load(`56px ${UNDERSIDE_FONT}`)
+        .then(() => document.fonts.load(`32px ${UNDERSIDE_FONT}`))
+        .then(() => {
+          paintBoardUndersideTexture(ctx, size);
+          tex.needsUpdate = true;
+        })
+        .catch(() => {});
+    }
     return tex;
   }
 
